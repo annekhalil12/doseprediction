@@ -37,7 +37,7 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).parent))
 
-from config import DATA_ROOT, OUTPUT_DIR, PreprocessingConfig
+from preprocessing.preprocessing_config import DATA_ROOT, OUTPUT_DIR, PreprocessingConfig
 from preprocessing import preprocess_patient
 
 # ── Logging ───────────────────────────────────────────────────────────────────

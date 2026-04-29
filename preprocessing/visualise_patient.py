@@ -37,7 +37,7 @@ import matplotlib.patches as mpatches
 
 # ── Imports ───────────────────────────────────────────────────────────────────
 sys.path.insert(0, str(Path(__file__).parent))
-from config import OUTPUT_DIR
+from preprocessing.preprocessing_config import OUTPUT_DIR
 
 # ── Load the pickle ───────────────────────────────────────────────────────────
 # Find the first .pkl file in the outputs directory

@@ -31,7 +31,7 @@ import numpy as np
 # Add the preprocessing folder to the Python path so we can import our modules
 sys.path.insert(0, str(Path(__file__).parent))
 
-from config import DATA_ROOT, OUTPUT_DIR, PreprocessingConfig, CHANNEL_MAP, AVAILABLE_CHANNELS
+from preprocessing.preprocessing_config import DATA_ROOT, OUTPUT_DIR, PreprocessingConfig, CHANNEL_MAP, AVAILABLE_CHANNELS
 from preprocessing import preprocess_patient
 
 # ── Logging setup ─────────────────────────────────────────────────────────────
