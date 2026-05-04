@@ -75,6 +75,14 @@ import torch
 from torch import Tensor
 from torch.utils.data import Dataset
 
+from monai.transforms import (
+    Compose,
+    RandFlipd,
+    RandRotate90d,
+    RandScaleIntensity,  # non-dict version — applied to sCT channel only
+    RandShiftIntensity,  # non-dict version — applied to sCT channel only
+)
+
 log = logging.getLogger(__name__)
 
 
@@ -173,6 +181,43 @@ class LUNDPROBEDataset(Dataset):
             f"pickle_dir={self.pickle_dir}"
         )
 
+        # ── Augmentation transforms ────────────────────────────────────────
+        # Transforms are only active during training — val and test always
+        # see the original unmodified volumes for reproducible evaluation.
+        if split == "train":
+            # Geometric transforms use the dict API (suffix 'd') so that
+            # "input" and "dose" are always flipped/rotated identically —
+            # the dose map must stay aligned with the anatomy at all times.
+            self.geometric_transform = Compose([
+                RandFlipd(
+                    keys=["input", "dose"],
+                    prob=0.5,
+                    spatial_axis=0,   # flip along depth axis
+                ),
+                RandFlipd(
+                    keys=["input", "dose"],
+                    prob=0.5,
+                    spatial_axis=2,   # flip left-right
+                ),
+                RandRotate90d(
+                    keys=["input", "dose"],
+                    prob=0.5,
+                    max_k=1,          # rotate 0 or 90 degrees only
+                    spatial_axes=(1, 2),  # rotate in the axial plane
+                ),
+            ])
+
+            # Intensity transforms use the non-dict API because they are
+            # applied to channel 8 (sCT) only — binary masks in channels
+            # 0–7 must stay exactly 0 or 1, never scaled or shifted.
+            self.intensity_transform = Compose([
+                RandScaleIntensity(factors=0.1, prob=0.5),
+                RandShiftIntensity(offsets=0.1, prob=0.5),
+            ])
+        else:
+            self.geometric_transform  = None
+            self.intensity_transform  = None
+
     # ── PyTorch Dataset interface ──────────────────────────────────────────
 
     def __len__(self) -> int:
@@ -231,6 +276,25 @@ class LUNDPROBEDataset(Dataset):
         dose_tensor = dose_tensor.unsqueeze(0)    # (1, D, H, W)
         ptv_tensor  = ptv_tensor.unsqueeze(0)     # (1, D, H, W)
 
+        # ── Apply augmentation (training only) ────────────────────────────
+        if self.geometric_transform is not None:
+            # MONAI dict transforms expect a dict — we pass input and dose
+            # together so they are transformed with the same random parameters.
+            augmented = self.geometric_transform({
+                "input": input_tensor,
+                "dose":  dose_tensor,
+            })
+            input_tensor = augmented["input"]
+            dose_tensor  = augmented["dose"]
+
+        if self.intensity_transform is not None:
+            # Extract sCT channel, scale/shift it, put it back.
+            # Indexing [8:9] keeps the channel dimension so MONAI
+            # receives a (1, D, H, W) tensor as expected.
+            sct_channel = input_tensor[8:9]
+            sct_channel = self.intensity_transform(sct_channel)
+            input_tensor[8] = sct_channel[0]
+            
         return {
             "input":      input_tensor,
             "dose":       dose_tensor,
