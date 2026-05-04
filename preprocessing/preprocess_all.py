@@ -38,7 +38,7 @@ import numpy as np
 sys.path.insert(0, str(Path(__file__).parent))
 
 from configs.config_preprocessing_shared import DATA_ROOT, OUTPUT_DIR, PreprocessingConfig
-from preprocessing import preprocess_patient
+from preprocessing.preprocessing import preprocess_patient
 
 # ── Logging ───────────────────────────────────────────────────────────────────
 # Logs go to both the terminal and a log file so you have a record even

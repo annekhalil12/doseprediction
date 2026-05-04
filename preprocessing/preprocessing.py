@@ -55,10 +55,19 @@ log = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 def load_nifti(path: Path) -> sitk.Image:
-    """Load a NIfTI file (.nii or .nii.gz) and return a SimpleITK image."""
+    """Load a NIfTI file and reorient to canonical LPS orientation.
+    
+    Reorienting here ensures that GetArrayFromImage() always returns
+    (D, H, W) in a consistent axis order regardless of how the original
+    NIfTI file was stored. Without this, patients with different scanner
+    orientations produce arrays with swapped H and W axes.
+    """
     if not path.exists():
         raise FileNotFoundError(f"NIfTI file not found: {path}")
-    return sitk.ReadImage(str(path))
+    image = sitk.ReadImage(str(path))
+    # Force canonical orientation — eliminates axis swaps across patients
+    image = sitk.DICOMOrient(image, "LPS")
+    return image
 
 
 def resample_image(
