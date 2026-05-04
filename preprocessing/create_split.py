@@ -59,7 +59,7 @@ import numpy as np
 from sklearn.model_selection import StratifiedKFold, train_test_split
 
 sys.path.insert(0, str(Path(__file__).parent))
-from preprocessing_config import OUTPUT_DIR
+from configs.config_preprocessing_shared import OUTPUT_DIR
 
 logging.basicConfig(
     level=logging.INFO,

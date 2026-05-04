@@ -45,7 +45,7 @@ from typing import Dict, Optional, Tuple
 import numpy as np
 import SimpleITK as sitk
 
-from preprocessing.preprocessing_config import PreprocessingConfig, CHANNEL_MAP, AVAILABLE_CHANNELS
+from configs.config_preprocessing_shared import PreprocessingConfig, CHANNEL_MAP, AVAILABLE_CHANNELS
 
 log = logging.getLogger(__name__)
 
