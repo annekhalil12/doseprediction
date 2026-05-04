@@ -34,10 +34,28 @@ Usage
 -----
     from dataset import LUNDPROBEDataset
 
+    # During cross-validation: specify which fold is the current val fold.
+    # The Dataset figures out train/val patients automatically from the CSV.
     train_ds = LUNDPROBEDataset(
         split_csv  = Path("outputs/split.csv"),
-        pickle_dir = Path("outputs/"),   # or network path on AI PC
+        pickle_dir = Path("outputs/"),
         split      = "train",
+        fold       = 2,          # patients with fold != 2 are training
+    )
+
+    val_ds = LUNDPROBEDataset(
+        split_csv  = Path("outputs/split.csv"),
+        pickle_dir = Path("outputs/"),
+        split      = "val",
+        fold       = 2,          # patients with fold == 2 are validation
+    )
+
+    # For final evaluation on the held-out test set, fold is ignored.
+    test_ds = LUNDPROBEDataset(
+        split_csv  = Path("outputs/split.csv"),
+        pickle_dir = Path("outputs/"),
+        split      = "test",
+        fold       = None,
     )
 
     sample = train_ds[0]
@@ -51,7 +69,7 @@ import csv
 import logging
 import pickle
 from pathlib import Path
-from typing import Dict, List, Literal
+from typing import Dict, List, Literal, Optional
 
 import torch
 from torch import Tensor
@@ -75,6 +93,9 @@ class LUNDPROBEDataset(Dataset):
     split_csv  : path to outputs/split.csv (created by create_split.py)
     pickle_dir : directory containing the .pkl files
     split      : which subset to load — "train", "val", or "test"
+    fold       : which fold is currently the validation fold (0–4).
+                 Required for split="train" and split="val".
+                 Ignored for split="test" (pass None).
     channels   : which input channel indices to return; None = all available.
                  This is how each model gets its channel subset from the
                  shared 9-channel cache without reprocessing.
@@ -86,12 +107,23 @@ class LUNDPROBEDataset(Dataset):
         split_csv:  Path,
         pickle_dir: Path,
         split:      Literal["train", "val", "test"],
+        fold:       Optional[int] = None,
         channels:   List[int] | None = None,
     ) -> None:
         super().__init__()
 
         self.pickle_dir = Path(pickle_dir)
         self.channels   = channels
+
+        # Validate fold argument — it is required for train/val splits
+        # because the CSV no longer has a fixed "train"/"val" label.
+        # Instead, which patients are training vs. validation depends on
+        # which fold is currently held out as the validation set.
+        if split in ("train", "val") and fold is None:
+            raise ValueError(
+                f"split='{split}' requires a fold argument (0–4). "
+                "Example: LUNDPROBEDataset(..., split='train', fold=2)"
+            )
 
         # ── Load the split CSV and filter to the requested subset ──────────
         # The split CSV was created once by create_split.py and committed
@@ -110,17 +142,33 @@ class LUNDPROBEDataset(Dataset):
         with open(split_path, newline="") as f:
             reader = csv.DictReader(f)
             for row in reader:
-                if row["split"] == split:
-                    self.patient_ids.append(row["patient_id"])
+                is_test = row["is_test"].strip().lower() == "true"
+
+                if split == "test":
+                    # Test patients are permanently held out — fold is irrelevant.
+                    if is_test:
+                        self.patient_ids.append(row["patient_id"])
+
+                elif split == "val":
+                    # Validation patients for this fold: not in test set,
+                    # and their fold number matches the current fold.
+                    if not is_test and int(row["fold"]) == fold:
+                        self.patient_ids.append(row["patient_id"])
+
+                elif split == "train":
+                    # Training patients for this fold: not in test set,
+                    # and their fold number does NOT match the current fold.
+                    if not is_test and int(row["fold"]) != fold:
+                        self.patient_ids.append(row["patient_id"])
 
         if len(self.patient_ids) == 0:
             raise ValueError(
-                f"No patients found for split='{split}' in {split_path}. "
+                f"No patients found for split='{split}', fold={fold} in {split_path}. "
                 "Check that create_split.py ran successfully."
             )
 
         log.info(
-            f"LUNDPROBEDataset | split='{split}' | "
+            f"LUNDPROBEDataset | split='{split}' | fold={fold} | "
             f"{len(self.patient_ids)} patients | "
             f"pickle_dir={self.pickle_dir}"
         )

@@ -1,7 +1,7 @@
 """
 create_split.py
 ===============
-Generate a reproducible, stratified train / val / test split for the
+Generate a reproducible, stratified k-fold split for the
 LUND-PROBE cohort and save it as a CSV artefact.
 
 Run from the preprocessing/ directory:
@@ -25,14 +25,27 @@ Stratification by acquisition group
 -------------------------------------
 LUND-PROBE contains two acquisition groups (oldAcq, newAcq) in a ~75/25
 ratio. A random split without stratification risks skewing this ratio in
-the test set, which would mean evaluation results are not representative
-of the full cohort. Stratification applies the 70/15/15 split independently
-within each group so that each set inherits the cohort-level ratio.
+any individual fold, which would mean validation performance in that fold
+is not representative of the full cohort.
+
+This script uses a two-stage stratified approach:
+
+  1. A fixed 15% held-out test set is carved out first. It is stratified
+     by acquisition group and never used during cross-validation. This
+     preserves an honest, unbiased final evaluation.
+
+  2. The remaining 85% of patients are split into 5 folds using
+     StratifiedKFold, which ensures every fold maintains the cohort-level
+     ~75/25 oldAcq/newAcq ratio. During training, one fold at a time serves
+     as the validation set while the other four are used for training.
 
 Output
 ------
   <OUTPUT_DIR>/split.csv   — one row per patient with columns:
-      patient_id, acquisition_group, split (train / val / test)
+      patient_id, acquisition_group, is_test (bool), fold (0–4 or empty for test)
+
+  Test patients have is_test=True and fold is empty.
+  Non-test patients have is_test=False and fold in {0, 1, 2, 3, 4}.
 
 Commit this file to the repository so the split is version-controlled.
 """
@@ -43,7 +56,7 @@ import logging
 from pathlib import Path
 
 import numpy as np
-from sklearn.model_selection import train_test_split
+from sklearn.model_selection import StratifiedKFold, train_test_split
 
 sys.path.insert(0, str(Path(__file__).parent))
 from preprocessing_config import OUTPUT_DIR
@@ -58,10 +71,9 @@ log = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # Split parameters
 # ---------------------------------------------------------------------------
-TRAIN_FRAC = 0.70   # 70% training
-VAL_FRAC   = 0.15   # 15% validation
-TEST_FRAC  = 0.15   # 15% test  (= 1 - TRAIN_FRAC - VAL_FRAC)
-SEED       = 42     # fixed seed → reproducible splits every run
+TEST_FRAC = 0.15   # 15% of all patients held out as a fixed test set
+N_FOLDS   = 5      # number of cross-validation folds on the remaining 85%
+SEED      = 42     # fixed seed → reproducible splits every run
 
 # ---------------------------------------------------------------------------
 # Load the preprocessing summary to get the list of successful patients
@@ -111,91 +123,86 @@ log.info(f"  oldAcq patients: {len(old_acq_patients)}")
 log.info(f"  newAcq patients: {len(new_acq_patients)}")
 
 # ---------------------------------------------------------------------------
-# Stratified split — applied independently within each acquisition group
+# Stage 1: Carve out the fixed held-out test set
 # ---------------------------------------------------------------------------
-# We perform the split in two stages:
-#   Stage 1: separate train from (val + test) using TRAIN_FRAC
-#   Stage 2: split the remaining pool 50/50 into val and test
-#            (since VAL_FRAC == TEST_FRAC == 0.15, the remainder is 0.30,
-#            and 0.15 / 0.30 = 0.50)
-# This is applied identically to oldAcq and newAcq, then combined.
+# The test set is separated BEFORE any cross-validation fold assignment.
+# This ensures test patients are never seen during training or fold-level
+# validation — preserving an honest final evaluation.
+# stratify= ensures the 75/25 oldAcq/newAcq ratio is maintained in the test set.
+all_patient_ids = list(groups.keys())
+acq_labels      = [groups[pid] for pid in all_patient_ids]
 
-val_of_remainder = VAL_FRAC / (VAL_FRAC + TEST_FRAC)  # = 0.5
-
-split_assignments = {}   # patient_id -> "train" | "val" | "test"
-
-for group_name, patient_list in [("oldAcq", old_acq_patients),
-                                   ("newAcq", new_acq_patients)]:
-
-    # Stage 1: train vs remainder
-    train_ids, remainder_ids = train_test_split(
-        patient_list,
-        test_size=(1.0 - TRAIN_FRAC),
-        random_state=SEED,
-    )
-
-    # Stage 2: val vs test from the remainder
-    val_ids, test_ids = train_test_split(
-        remainder_ids,
-        test_size=(1.0 - val_of_remainder),
-        random_state=SEED,
-    )
-
-    for pid in train_ids:
-        split_assignments[pid] = "train"
-    for pid in val_ids:
-        split_assignments[pid] = "val"
-    for pid in test_ids:
-        split_assignments[pid] = "test"
-
-    log.info(
-        f"  {group_name}: {len(train_ids)} train | "
-        f"{len(val_ids)} val | {len(test_ids)} test"
-    )
-
-# ---------------------------------------------------------------------------
-# Summary counts and ratio check
-# ---------------------------------------------------------------------------
-train_pids = [pid for pid, s in split_assignments.items() if s == "train"]
-val_pids   = [pid for pid, s in split_assignments.items() if s == "val"]
-test_pids  = [pid for pid, s in split_assignments.items() if s == "test"]
+train_val_ids, test_ids = train_test_split(
+    all_patient_ids,
+    test_size=TEST_FRAC,
+    stratify=acq_labels,
+    random_state=SEED,
+)
 
 log.info("")
-log.info("Overall split:")
-log.info(f"  Train : {len(train_pids):3d} patients ({len(train_pids)/len(successful_patients)*100:.1f}%)")
-log.info(f"  Val   : {len(val_pids):3d} patients ({len(val_pids)/len(successful_patients)*100:.1f}%)")
-log.info(f"  Test  : {len(test_pids):3d} patients ({len(test_pids)/len(successful_patients)*100:.1f}%)")
-log.info("")
+log.info(f"Test set (held out): {len(test_ids)} patients ({len(test_ids)/len(all_patient_ids)*100:.1f}%)")
+log.info(f"Train/val pool:      {len(train_val_ids)} patients ({len(train_val_ids)/len(all_patient_ids)*100:.1f}%)")
 
-# Verify acquisition group ratios are preserved across sets
-for set_name, pid_list in [("Train", train_pids), ("Val", val_pids), ("Test", test_pids)]:
-    n_old = sum(1 for pid in pid_list if groups[pid] == "oldAcq")
-    n_new = sum(1 for pid in pid_list if groups[pid] == "newAcq")
+# ---------------------------------------------------------------------------
+# Stage 2: Assign k-fold numbers to the train/val pool
+# ---------------------------------------------------------------------------
+# StratifiedKFold divides the train/val pool into N_FOLDS chunks, each
+# maintaining the cohort-level acquisition group ratio. The fold number
+# tells downstream code which patients form the validation set for that
+# fold — everything else in the pool is training data for that fold.
+train_val_acq_labels = [groups[pid] for pid in train_val_ids]
+
+skf = StratifiedKFold(n_splits=N_FOLDS, shuffle=True, random_state=SEED)
+
+# fold_map stores: patient_id -> fold index (0 through N_FOLDS-1)
+fold_map = {}
+for fold_idx, (_, val_indices) in enumerate(
+    skf.split(train_val_ids, train_val_acq_labels)
+):
+    # val_indices are positional indices into train_val_ids
+    for i in val_indices:
+        fold_map[train_val_ids[i]] = fold_idx
+
+log.info("")
+log.info("Fold composition (train/val pool only):")
+for fold_idx in range(N_FOLDS):
+    fold_patients = [pid for pid, f in fold_map.items() if f == fold_idx]
+    n_old = sum(1 for pid in fold_patients if groups[pid] == "oldAcq")
+    n_new = sum(1 for pid in fold_patients if groups[pid] == "newAcq")
     log.info(
-        f"  {set_name:5s} acquisition breakdown: "
-        f"oldAcq={n_old} ({n_old/len(pid_list)*100:.1f}%)  "
-        f"newAcq={n_new} ({n_new/len(pid_list)*100:.1f}%)"
+        f"  Fold {fold_idx}: {len(fold_patients)} patients | "
+        f"oldAcq={n_old} ({n_old/len(fold_patients)*100:.1f}%)  "
+        f"newAcq={n_new} ({n_new/len(fold_patients)*100:.1f}%)"
     )
+
+log.info("")
+log.info("Test set acquisition breakdown:")
+n_old = sum(1 for pid in test_ids if groups[pid] == "oldAcq")
+n_new = sum(1 for pid in test_ids if groups[pid] == "newAcq")
+log.info(
+    f"  oldAcq={n_old} ({n_old/len(test_ids)*100:.1f}%)  "
+    f"newAcq={n_new} ({n_new/len(test_ids)*100:.1f}%)"
+)
 
 # ---------------------------------------------------------------------------
 # Save the split CSV
 # ---------------------------------------------------------------------------
 # Sort by patient ID for a deterministic, human-readable file.
-split_path = OUTPUT_DIR / "split.csv"
-rows = sorted(
-    [
-        {
-            "patient_id":        pid,
-            "acquisition_group": groups[pid],
-            "split":             split_assignments[pid],
-        }
-        for pid in successful_patients
-    ],
-    key=lambda r: r["patient_id"],
-)
+rows = []
+for pid in sorted(successful_patients):
+    is_test = pid in set(test_ids)
+    rows.append({
+        "patient_id":        pid,
+        "acquisition_group": groups[pid],
+        "is_test":           is_test,
+        "fold":              "" if is_test else fold_map[pid],
+    })
 
+split_path = OUTPUT_DIR / "split.csv"
 with open(split_path, "w", newline="") as f:
-    writer = csv.DictWriter(f, fieldnames=["patient_id", "acquisition_group", "split"])
+    writer = csv.DictWriter(
+        f, fieldnames=["patient_id", "acquisition_group", "is_test", "fold"]
+    )
     writer.writeheader()
     writer.writerows(rows)
 
