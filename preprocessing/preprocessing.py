@@ -430,6 +430,17 @@ def preprocess_patient(
         si_superior = pcfg.si_superior_slices,
     )
 
+    # ── Enforce consistent H/W orientation ────────────────────────────────
+    # Expected shape per volume: (128, 256, 320) — D, H, W.
+    # Some patients have H and W swapped due to inconsistent NIfTI metadata.
+    # We fix it here at crop time so every pickle is saved with correct axes.
+    sample_vol = next(v for k, v in crop.items() if k != "__crop_offsets__")
+    if sample_vol.shape[1] == 320 and sample_vol.shape[2] == 256:
+        log.warning("H/W swap detected — transposing all crop volumes to (D, 256, 320).")
+        for key in list(crop.keys()):
+            if key != "__crop_offsets__":
+                crop[key] = np.transpose(crop[key], (0, 2, 1))
+
     # ── Stack available channels into input tensor ─────────────────────────
     # Channels 0–7 (structure masks) + channel 15 (sCT intensity).
     # Channels 8–14 (geometric features) are omitted until

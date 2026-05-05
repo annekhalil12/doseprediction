@@ -23,7 +23,7 @@ from typing import List, Tuple, Literal
 #   DATA_ROOT = Path(r"C:\Users\anne\data\lund-probe\basePart")
 
 DATA_ROOT  = Path(r"\\vumc.nl\Onderzoek\s4e-gpfs2\rath-research-01\Research\Research_Kidney_AI_OB_ABR_MP_NGA_Joris\NIKA\LUnd_dataset\lund-probe\lund-probe\basePart")
-OUTPUT_DIR = Path(r"C:\Users\P102831\thesis-doseprediction") / "outputs"
+OUTPUT_DIR = Path(r"C:\Users\P102831\thesis-doseprediction") / "outputs" / "pickles"  # where to save preprocessed tensors
 
 # ---------------------------------------------------------------------------
 # Preprocessing parameters
