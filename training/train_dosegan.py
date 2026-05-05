@@ -3,6 +3,7 @@
 # Shared preprocessing config lives in config_preprocessing_shared.py.
 # DoseGAN hyperparameters (lr, lambda, ngf) live in config_dosegan.py.
 
+from tqdm import tqdm
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
@@ -11,7 +12,7 @@ import logging
 import wandb
 
 from configs import config_dosegan as cfg  # all hyperparameters live here
-from dataset import LUNDPROBEDataset
+from training.dataset import LUNDPROBEDataset
 from models.dosegan import UnetGenerator3d, NLayerDiscriminator, GANLoss
 
 logging.basicConfig(level=logging.INFO)
@@ -40,7 +41,7 @@ def train_one_epoch(
     total_loss_D = 0.0
     total_loss_G = 0.0
 
-    for batch in dataloader:
+    for batch in tqdm(dataloader, desc="Training", leave=False):
         real_input = batch["input"].to(device)  # (B, 9, D, H, W)  — sCT + structure masks
         real_dose  = batch["dose"].to(device)   # (B, 1, D, H, W)  — ground-truth dose
 
@@ -119,7 +120,7 @@ def validate(
         # torch.no_grad() tells PyTorch not to track gradients at all.
         # During validation we are never calling .backward(), so storing
         # the computation graph would just waste GPU memory.
-        for batch in val_loader:
+        for batch in tqdm(val_loader, desc="Validating", leave=False):
             real_input = batch["input"].to(device)
             real_dose  = batch["dose"].to(device)
 
@@ -192,7 +193,8 @@ def main():
         discriminator.parameters(), lr=cfg.LR_D, betas=(cfg.BETA1, cfg.BETA2)
     )
 
-    criterion_GAN   = GANLoss(use_lsgan=cfg.USE_LSGAN).to(device)
+    tensor_type   = torch.cuda.FloatTensor if device.type == "cuda" else torch.FloatTensor
+    criterion_GAN = GANLoss(use_lsgan=cfg.USE_LSGAN, tensor=tensor_type).to(device)
     criterion_voxel = nn.L1Loss()
 
     # ── Training loop ──────────────────────────────────────────────────────

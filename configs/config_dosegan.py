@@ -27,8 +27,8 @@ NUM_WORKERS = 4    # reduce to 0 if DataLoader throws errors on Windows
 # ── Model architecture ─────────────────────────────────────────────────────
 INPUT_NC  = 9   # 8 structure masks + sCT intensity channel
 OUTPUT_NC = 1   # predicted dose volume
-NGF       = 64  # base number of generator filters — doubles at each U-Net level
-NDF       = 64  # base number of discriminator filters
+NGF       = 16  # base number of generator filters — doubles at each U-Net level
+NDF       = 16  # base number of discriminator filters
 N_LAYERS  = 3   # number of discriminator layers
 
 # ── Optimizers ─────────────────────────────────────────────────────────────

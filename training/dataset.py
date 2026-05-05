@@ -78,7 +78,6 @@ from torch.utils.data import Dataset
 from monai.transforms import (
     Compose,
     RandFlipd,
-    RandRotate90d,
     RandScaleIntensity,  # non-dict version — applied to sCT channel only
     RandShiftIntensity,  # non-dict version — applied to sCT channel only
 )
@@ -198,12 +197,6 @@ class LUNDPROBEDataset(Dataset):
                     keys=["input", "dose"],
                     prob=0.5,
                     spatial_axis=2,   # flip left-right
-                ),
-                RandRotate90d(
-                    keys=["input", "dose"],
-                    prob=0.5,
-                    max_k=1,          # rotate 0 or 90 degrees only
-                    spatial_axes=(1, 2),  # rotate in the axial plane
                 ),
             ])
 
