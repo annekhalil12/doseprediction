@@ -94,7 +94,7 @@ Per patient: resample to 1.5 mm isotropic â†’ z-score sCT inside body contour â†
 
 ## Project Context
 
-See `docs/thesis_proposal.md` for the full thesis design, `docs/thesis_rubric.md` for the grading rubric, and `docs/thesis_guidelines.md` for section-by-section writing requirements.
+See `docs/thesis_proposal.md` for the full thesis design, `docs/project_scope_omar.md` for the supervisor-defined scope, `docs/thesis_rubric.md` for the grading rubric, and `docs/thesis_guidelines.md` for section-by-section writing requirements.
 
 **Thesis goal:** Compare 3D U-Net, DoseGAN, and DoseGNN for dose prediction in adaptive pancreatic MRgRT. Phase 1 benchmarks on LUND-PROBE (this repo); Phase 2 applies to a private pancreatic cohort (~200 patients); Phase 3 analyses robustness under anatomical variation and transfer learning. DoseGNN is implemented in collaboration with a peer.
 
