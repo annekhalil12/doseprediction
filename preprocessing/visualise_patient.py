@@ -36,8 +36,10 @@ import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
 
 # ── Imports ───────────────────────────────────────────────────────────────────
-sys.path.insert(0, str(Path(__file__).parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from configs.config_preprocessing_shared import OUTPUT_DIR
+
+VIS_DIR = Path("outputs/visualisations")
 
 # ── Load the pickle ───────────────────────────────────────────────────────────
 # Find the first .pkl file in the outputs directory
@@ -195,7 +197,7 @@ fig.legend(handles=legend_patches, loc="lower center", ncol=3, fontsize=11, fram
 plt.tight_layout(rect=[0, 0.04, 1, 1])
 
 # ── Save to disk ───────────────────────────────────────────────────────────────
-vis_dir = OUTPUT_DIR / "visualisations"
+vis_dir = VIS_DIR
 vis_dir.mkdir(parents=True, exist_ok=True)
 save_path = vis_dir / f"{patient_id}.png"
 plt.savefig(save_path, dpi=150, bbox_inches="tight")

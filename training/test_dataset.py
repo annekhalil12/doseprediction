@@ -15,11 +15,11 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from training.dataset import LUNDPROBEDataset
 
 split_csv  = Path("outputs/split.csv")
-pickle_dir = Path("outputs/")
+pickle_dir = Path("outputs/pickles")
 
-# Test all three splits
 for split_name in ["train", "val", "test"]:
-    ds     = LUNDPROBEDataset(split_csv=split_csv, pickle_dir=pickle_dir, split=split_name)
+    fold = 0 if split_name in ("train", "val") else None
+    ds     = LUNDPROBEDataset(split_csv=split_csv, pickle_dir=pickle_dir, split=split_name, fold=fold)
     sample = ds[0]
 
     print(f"\n--- {split_name.upper()} ---")
@@ -32,5 +32,3 @@ for split_name in ["train", "val", "test"]:
     print(f"  Dose range   : [{sample['dose'].min():.3f}, {sample['dose'].max():.3f}]")
 
 print("\nAll splits loaded successfully.")
-
-#hello

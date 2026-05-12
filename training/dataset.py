@@ -38,14 +38,14 @@ Usage
     # The Dataset figures out train/val patients automatically from the CSV.
     train_ds = LUNDPROBEDataset(
         split_csv  = Path("outputs/split.csv"),
-        pickle_dir = Path("outputs/"),
+        pickle_dir = Path("outputs/pickles"),
         split      = "train",
         fold       = 2,          # patients with fold != 2 are training
     )
 
     val_ds = LUNDPROBEDataset(
         split_csv  = Path("outputs/split.csv"),
-        pickle_dir = Path("outputs/"),
+        pickle_dir = Path("outputs/pickles"),
         split      = "val",
         fold       = 2,          # patients with fold == 2 are validation
     )
@@ -53,7 +53,7 @@ Usage
     # For final evaluation on the held-out test set, fold is ignored.
     test_ds = LUNDPROBEDataset(
         split_csv  = Path("outputs/split.csv"),
-        pickle_dir = Path("outputs/"),
+        pickle_dir = Path("outputs/pickles"),
         split      = "test",
         fold       = None,
     )

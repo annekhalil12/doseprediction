@@ -58,8 +58,10 @@ from pathlib import Path
 import numpy as np
 from sklearn.model_selection import StratifiedKFold, train_test_split
 
-sys.path.insert(0, str(Path(__file__).parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from configs.config_preprocessing_shared import OUTPUT_DIR
+
+SPLIT_CSV = Path("outputs/split.csv")
 
 logging.basicConfig(
     level=logging.INFO,
@@ -198,7 +200,8 @@ for pid in sorted(successful_patients):
         "fold":              "" if is_test else fold_map[pid],
     })
 
-split_path = OUTPUT_DIR / "split.csv"
+split_path = SPLIT_CSV
+split_path.parent.mkdir(parents=True, exist_ok=True)
 with open(split_path, "w", newline="") as f:
     writer = csv.DictWriter(
         f, fieldnames=["patient_id", "acquisition_group", "is_test", "fold"]

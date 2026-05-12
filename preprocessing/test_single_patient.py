@@ -29,10 +29,10 @@ from pathlib import Path
 import numpy as np
 
 # Add the preprocessing folder to the Python path so we can import our modules
-sys.path.insert(0, str(Path(__file__).parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from configs.config_preprocessing_shared import DATA_ROOT, OUTPUT_DIR, PreprocessingConfig, CHANNEL_MAP, AVAILABLE_CHANNELS
-from preprocessing import preprocess_patient
+from preprocessing.preprocessing import preprocess_patient
 
 # ── Logging setup ─────────────────────────────────────────────────────────────
 # INFO level shows crop anchor positions and normalisation stats per patient.

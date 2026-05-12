@@ -36,9 +36,7 @@ def main():
         ndf=16, n_layers=3,  # use fewer filters and layers for smoke test
     ).to(device)
 
-    # Tell GANLoss to create target tensors on the same device as the model
-    tensor_type = torch.cuda.FloatTensor if device.type == "cuda" else torch.FloatTensor
-    criterion_GAN = GANLoss(use_lsgan=cfg.USE_LSGAN, tensor=tensor_type).to(device)
+    criterion_GAN = GANLoss(use_lsgan=cfg.USE_LSGAN).to(device)
     criterion_voxel = nn.L1Loss()
 
     optimizer_G = torch.optim.Adam(generator.parameters(),     lr=cfg.LR_G)

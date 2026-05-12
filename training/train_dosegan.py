@@ -193,8 +193,7 @@ def main():
         discriminator.parameters(), lr=cfg.LR_D, betas=(cfg.BETA1, cfg.BETA2)
     )
 
-    tensor_type   = torch.cuda.FloatTensor if device.type == "cuda" else torch.FloatTensor
-    criterion_GAN = GANLoss(use_lsgan=cfg.USE_LSGAN, tensor=tensor_type).to(device)
+    criterion_GAN = GANLoss(use_lsgan=cfg.USE_LSGAN).to(device)
     criterion_voxel = nn.L1Loss()
 
     # ── Training loop ──────────────────────────────────────────────────────
