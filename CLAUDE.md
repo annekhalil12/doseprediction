@@ -92,6 +92,17 @@ Per patient: resample to 1.5 mm isotropic → z-score sCT inside body contour �
 | SLURM logs | `outputs/logs/` |
 | W&B runs | tracked under project `doseprediction-lundprobe` |
 
+## Project Context
+
+See `docs/thesis_proposal.md` for the full thesis design and `docs/thesis_rubric.md` for the grading rubric.
+
+**Thesis goal:** Compare 3D U-Net, DoseGAN, and DoseGNN for dose prediction in adaptive pancreatic MRgRT. Phase 1 benchmarks on LUND-PROBE (this repo); Phase 2 applies to a private pancreatic cohort (~200 patients); Phase 3 analyses robustness under anatomical variation and transfer learning. DoseGNN is implemented in collaboration with a peer.
+
+Key implications for the work (from rubric):
+- **Originality (60% weight)**: applying an existing GAN architecture to 3D dose prediction scores a 6-7; to push higher the experiments, analyses, and insights need to be novel and well-argued
+- **Experimental evaluation**: quantitative error/uncertainty analysis and well-designed ablations are needed for an 8+
+- **Reflection**: honest discussion of limitations and what would be done differently matters for the grade
+
 ## Geometric channels
 
 Channels 8–14 (distance maps, angles, radiological depth) are not yet implemented — waiting on `V5geometric_channels.py` from collaborator. All pickles have `geometric_channels_pending=True`. Current input tensor uses channels 0–7 (structure masks) + channel 15 (sCT), giving 9 channels total.
