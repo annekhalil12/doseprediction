@@ -20,6 +20,10 @@ outputs/logs/
 !outputs/split.csv
 !outputs/preprocessing_summary.csv
 
+# Personal context files
+docs/
+CLAUDE.md
+
 # W&B
 wandb/
 
