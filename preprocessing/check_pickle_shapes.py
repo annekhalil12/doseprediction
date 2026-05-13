@@ -5,7 +5,7 @@
 import pickle
 from pathlib import Path
 
-pickle_dir = Path("outputs/pickles")
+pickle_dir = Path("data/pickles")
 pickles    = sorted(pickle_dir.glob("*.pkl"))
 
 print(f"Total pickles found: {len(pickles)}\n")

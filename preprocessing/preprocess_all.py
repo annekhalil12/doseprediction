@@ -12,7 +12,7 @@ Run from the project root on Snellius:
 Output
 ------
 One .pkl file per patient in OUTPUT_DIR.
-A summary CSV is written to OUTPUT_DIR/preprocessing_summary.csv.
+A summary CSV is written to SUMMARY_CSV (= data/preprocessing_summary.csv).
 """
 
 import csv
@@ -29,7 +29,7 @@ from tqdm import tqdm
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from configs.config_preprocessing_shared import DATA_ROOT, OUTPUT_DIR, PreprocessingConfig
+from configs.config_preprocessing_shared import DATA_ROOT, OUTPUT_DIR, SUMMARY_CSV, PreprocessingConfig
 from preprocessing.preprocessing import preprocess_patient
 
 N_WORKERS = int(os.environ.get("SLURM_CPUS_PER_TASK", 4))
@@ -109,7 +109,8 @@ def main():
                 bar.set_postfix(ok=n_success, skip=n_skipped, fail=n_failed)
                 bar.update(1)
 
-    summary_path = OUTPUT_DIR / "preprocessing_summary.csv"
+    summary_path = SUMMARY_CSV
+    summary_path.parent.mkdir(parents=True, exist_ok=True)
     with open(summary_path, "w", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=["patient_id", "status", "error"])
         writer.writeheader()

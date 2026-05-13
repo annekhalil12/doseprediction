@@ -5,7 +5,6 @@
 
 from tqdm import tqdm
 import torch
-import torch.nn as nn
 from torch.utils.data import DataLoader
 from pathlib import Path
 import logging
@@ -19,14 +18,19 @@ logging.basicConfig(level=logging.INFO)
 log = logging.getLogger(__name__)
 
 
+def masked_l1(pred: torch.Tensor, target: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
+    # Mean absolute error over body-contour voxels only (mask channel 7 = BODY).
+    # Avoids penalising predictions in air voxels where dose is trivially zero.
+    return (torch.abs(pred - target) * mask).sum() / mask.sum().clamp(min=1)
+
+
 def train_one_epoch(
     generator:     UnetGenerator3d,
     discriminator: NLayerDiscriminator,
     dataloader:    DataLoader,
     optimizer_G:   torch.optim.Optimizer,
     optimizer_D:   torch.optim.Optimizer,
-    criterion_GAN:   GANLoss,
-    criterion_voxel: nn.L1Loss,
+    criterion_GAN: GANLoss,
     lambda_voxel:  float,
     device:        torch.device,
 ) -> dict:
@@ -43,8 +47,9 @@ def train_one_epoch(
     total_loss_L1 = 0.0
 
     for batch in tqdm(dataloader, desc="Training", leave=False):
-        real_input = batch["input"].to(device)  # (B, 9, D, H, W)  — sCT + structure masks
-        real_dose  = batch["dose"].to(device)   # (B, 1, D, H, W)  — ground-truth dose
+        real_input = batch["input"].to(device)   # (B, 9, D, H, W)  — sCT + structure masks
+        real_dose  = batch["dose"].to(device)    # (B, 1, D, H, W)  — ground-truth dose
+        body_mask  = real_input[:, 7:8]          # (B, 1, D, H, W)  — BODY contour, binary
 
         # ── Phase 1: Train the discriminator ──────────────────────────────
         # Generator is not updated here — we only call optimizer_D.step()
@@ -82,8 +87,8 @@ def train_one_epoch(
         # Adversarial loss: fool the discriminator into thinking fake is real
         loss_G_adv = criterion_GAN(pred_fake, target_is_real=True)
 
-        # Voxel loss: stay close to the real dose map
-        loss_G_voxel = criterion_voxel(fake_dose, real_dose)
+        # Voxel loss: stay close to the real dose map (body voxels only)
+        loss_G_voxel = masked_l1(fake_dose, real_dose, body_mask)
 
         # Combined generator loss
         loss_G = loss_G_adv + lambda_voxel * loss_G_voxel
@@ -104,11 +109,10 @@ def train_one_epoch(
     }
 
 def validate(
-    generator:       UnetGenerator3d,
-    val_loader:      DataLoader,
-    criterion_voxel: nn.L1Loss,
-    device:          torch.device,
-    ) -> float:
+    generator:  UnetGenerator3d,
+    val_loader: DataLoader,
+    device:     torch.device,
+) -> float:
     """
     Runs the generator on the validation set and returns average L1 loss.
     The discriminator plays no role here — we only care about dose accuracy
@@ -126,9 +130,10 @@ def validate(
         for batch in tqdm(val_loader, desc="Validating", leave=False):
             real_input = batch["input"].to(device)
             real_dose  = batch["dose"].to(device)
+            body_mask  = real_input[:, 7:8]
 
             fake_dose = generator(real_input)
-            loss      = criterion_voxel(fake_dose, real_dose)
+            loss      = masked_l1(fake_dose, real_dose, body_mask)
             total_loss += loss.item()
 
     generator.train()  # switch back to training mode before returning
@@ -151,7 +156,9 @@ def main():
             "ngf":          cfg.NGF,
             "ndf":          cfg.NDF,
             "n_layers":     cfg.N_LAYERS,
-            "use_lsgan":    cfg.USE_LSGAN,
+            "num_downs":    cfg.NUM_DOWNS,
+            "use_lsgan":           cfg.USE_LSGAN,
+            "early_stop_patience": cfg.EARLY_STOP_PATIENCE,
         }
     )
 
@@ -181,7 +188,7 @@ def main():
 
     generator = UnetGenerator3d(
         input_nc=cfg.INPUT_NC, output_nc=cfg.OUTPUT_NC,
-        num_downs=5, ngf=cfg.NGF,
+        num_downs=cfg.NUM_DOWNS, ngf=cfg.NGF,
     ).to(device)
 
     discriminator = NLayerDiscriminator(
@@ -197,19 +204,18 @@ def main():
     )
 
     criterion_GAN = GANLoss(use_lsgan=cfg.USE_LSGAN).to(device)
-    criterion_voxel = nn.L1Loss()
 
     # ── Training loop ──────────────────────────────────────────────────────
     best_val_loss = float("inf")
+    epochs_no_improve = 0
 
     for epoch in range(1, cfg.EPOCHS + 1):
         train_losses = train_one_epoch(
             generator, discriminator, train_loader,
             optimizer_G, optimizer_D,
-            criterion_GAN, criterion_voxel,
-            cfg.LAMBDA_VOXEL, device,
+            criterion_GAN, cfg.LAMBDA_VOXEL, device,
         )
-        val_loss = validate(generator, val_loader, criterion_voxel, device)
+        val_loss = validate(generator, val_loader, device)
 
         # ── Log to W&B ────────────────────────────────────────────────────
         # This sends all losses to your dashboard after every epoch.
@@ -232,6 +238,7 @@ def main():
 
         if val_loss < best_val_loss:
             best_val_loss = val_loss
+            epochs_no_improve = 0
             ckpt_path = cfg.CKPT_DIR / f"dosegan_fold{cfg.FOLD}_best.pt"
             torch.save({
                 "epoch":         epoch,
@@ -242,7 +249,19 @@ def main():
                 "best_val_loss": best_val_loss,
             }, ckpt_path)
             log.info(f"  ✓ Checkpoint saved: {ckpt_path}")
-            wandb.save(str(ckpt_path))  # also back up checkpoint to W&B cloud
+        else:
+            epochs_no_improve += 1
+            log.info(f"  No improvement for {epochs_no_improve}/{cfg.EARLY_STOP_PATIENCE} epochs")
+            if epochs_no_improve >= cfg.EARLY_STOP_PATIENCE:
+                log.info(f"Early stopping at epoch {epoch}")
+                break
+
+    # Upload the best checkpoint to W&B exactly once, after training ends.
+    # Saving inside the val-improvement branch would re-upload the full 1.5 GB
+    # checkpoint on every improvement.
+    best_ckpt_path = cfg.CKPT_DIR / f"dosegan_fold{cfg.FOLD}_best.pt"
+    if best_ckpt_path.exists():
+        wandb.save(str(best_ckpt_path), policy="now")
 
     wandb.finish()  # cleanly close the W&B run when training ends
 

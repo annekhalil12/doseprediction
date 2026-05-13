@@ -14,8 +14,8 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from training.dataset import LUNDPROBEDataset
 
-split_csv  = Path("outputs/split.csv")
-pickle_dir = Path("outputs/pickles")
+split_csv  = Path("data/split.csv")
+pickle_dir = Path("data/pickles")
 
 for split_name in ["train", "val", "test"]:
     fold = 0 if split_name in ("train", "val") else None

@@ -28,7 +28,7 @@ def main():
     # ── Models ────────────────────────────────────────────────────────────
     generator     = UnetGenerator3d(
         input_nc=cfg.INPUT_NC, output_nc=cfg.OUTPUT_NC,
-        num_downs=5, ngf=16,  # use fewer filters for smoke test
+        num_downs=cfg.NUM_DOWNS, ngf=16,  # use fewer filters for smoke test
     ).to(device)
 
     discriminator = NLayerDiscriminator(

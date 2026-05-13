@@ -37,23 +37,23 @@ Usage
     # During cross-validation: specify which fold is the current val fold.
     # The Dataset figures out train/val patients automatically from the CSV.
     train_ds = LUNDPROBEDataset(
-        split_csv  = Path("outputs/split.csv"),
-        pickle_dir = Path("outputs/pickles"),
+        split_csv  = Path("data/split.csv"),
+        pickle_dir = Path("data/pickles"),
         split      = "train",
         fold       = 2,          # patients with fold != 2 are training
     )
 
     val_ds = LUNDPROBEDataset(
-        split_csv  = Path("outputs/split.csv"),
-        pickle_dir = Path("outputs/pickles"),
+        split_csv  = Path("data/split.csv"),
+        pickle_dir = Path("data/pickles"),
         split      = "val",
         fold       = 2,          # patients with fold == 2 are validation
     )
 
     # For final evaluation on the held-out test set, fold is ignored.
     test_ds = LUNDPROBEDataset(
-        split_csv  = Path("outputs/split.csv"),
-        pickle_dir = Path("outputs/pickles"),
+        split_csv  = Path("data/split.csv"),
+        pickle_dir = Path("data/pickles"),
         split      = "test",
         fold       = None,
     )
@@ -97,7 +97,7 @@ class LUNDPROBEDataset(Dataset):
 
     Parameters
     ----------
-    split_csv  : path to outputs/split.csv (created by create_split.py)
+    split_csv  : path to data/split.csv (created by create_split.py)
     pickle_dir : directory containing the .pkl files
     split      : which subset to load — "train", "val", or "test"
     fold       : which fold is currently the validation fold (0–4).

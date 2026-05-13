@@ -59,9 +59,7 @@ import numpy as np
 from sklearn.model_selection import StratifiedKFold, train_test_split
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from configs.config_preprocessing_shared import OUTPUT_DIR
-
-SPLIT_CSV = Path("outputs/split.csv")
+from configs.config_preprocessing_shared import SUMMARY_CSV, SPLIT_CSV
 
 logging.basicConfig(
     level=logging.INFO,
@@ -83,7 +81,7 @@ SEED      = 42     # fixed seed → reproducible splits every run
 # We only include patients that preprocessed successfully. Any failed patients
 # recorded in preprocessing_summary.csv are excluded — you don't want to
 # silently try to load a missing pickle during training.
-summary_path = OUTPUT_DIR / "preprocessing_summary.csv"
+summary_path = SUMMARY_CSV
 if not summary_path.exists():
     raise FileNotFoundError(
         f"preprocessing_summary.csv not found at {summary_path}.\n"
