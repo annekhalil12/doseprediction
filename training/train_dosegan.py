@@ -3,6 +3,7 @@
 # Shared preprocessing config lives in config_preprocessing_shared.py.
 # DoseGAN hyperparameters (lr, lambda, ngf) live in config_dosegan.py.
 
+import sys
 from tqdm import tqdm
 import torch
 from torch.utils.data import DataLoader
@@ -14,7 +15,7 @@ from configs import config_dosegan as cfg  # all hyperparameters live here
 from training.dataset import LUNDPROBEDataset
 from models.dosegan import UnetGenerator3d, NLayerDiscriminator, GANLoss
 
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.INFO, stream=sys.stdout)
 log = logging.getLogger(__name__)
 
 
