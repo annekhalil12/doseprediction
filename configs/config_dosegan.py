@@ -40,3 +40,9 @@ BETA2  = 0.999        # Adam beta2
 # ── Loss weights ───────────────────────────────────────────────────────────
 LAMBDA_VOXEL = 100    # weight of L1 voxel loss relative to adversarial loss
 USE_LSGAN    = True   # True = LSGAN (MSE), False = vanilla GAN (BCE)
+
+# ── Early stopping ─────────────────────────────────────────────────────────
+EARLY_STOPPING_PATIENCE = 15  # stop if val loss doesn't improve for this many epochs
+
+# ── Mixed precision ────────────────────────────────────────────────────────
+USE_AMP = True  # BF16/TF32 on H100 — ~1.5-2x speedup with no accuracy cost

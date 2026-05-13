@@ -6,6 +6,7 @@
 from tqdm import tqdm
 import torch
 import torch.nn as nn
+from torch.cuda.amp import GradScaler, autocast
 from torch.utils.data import DataLoader
 from pathlib import Path
 import logging
@@ -29,6 +30,9 @@ def train_one_epoch(
     criterion_voxel: nn.L1Loss,
     lambda_voxel:  float,
     device:        torch.device,
+    scaler_G:      GradScaler,
+    scaler_D:      GradScaler,
+    use_amp:       bool,
 ) -> dict:
     """
     One full pass over the training set.
@@ -46,50 +50,43 @@ def train_one_epoch(
         real_dose  = batch["dose"].to(device)   # (B, 1, D, H, W)  — ground-truth dose
 
         # ── Phase 1: Train the discriminator ──────────────────────────────
-        # Generator is not updated here — we only call optimizer_D.step()
+        with autocast(enabled=use_amp):
+            fake_dose = generator(real_input).detach()
+            # .detach() is critical: it cuts the fake dose off from the generator's
+            # computation graph. Without it, the discriminator loss would
+            # accidentally flow gradients back into the generator during Phase 1.
 
-        fake_dose = generator(real_input).detach()
-        # .detach() is critical: it cuts the fake dose off from the generator's
-        # computation graph. Without it, the discriminator loss would
-        # accidentally flow gradients back into the generator during Phase 1.
+            real_pair = torch.cat([real_input, real_dose], dim=1)  # (B, 10, D, H, W)
+            pred_real = discriminator(real_pair)
+            loss_D_real = criterion_GAN(pred_real, target_is_real=True)
 
-        # Discriminator judges real pairs (sCT + real dose)
-        real_pair = torch.cat([real_input, real_dose], dim=1)  # (B, 10, D, H, W)
-        pred_real = discriminator(real_pair)
-        loss_D_real = criterion_GAN(pred_real, target_is_real=True)
+            fake_pair = torch.cat([real_input, fake_dose], dim=1)  # (B, 10, D, H, W)
+            pred_fake = discriminator(fake_pair)
+            loss_D_fake = criterion_GAN(pred_fake, target_is_real=False)
 
-        # Discriminator judges fake pairs (sCT + generated dose)
-        fake_pair = torch.cat([real_input, fake_dose], dim=1)  # (B, 10, D, H, W)
-        pred_fake = discriminator(fake_pair)
-        loss_D_fake = criterion_GAN(pred_fake, target_is_real=False)
-
-        loss_D = (loss_D_real + loss_D_fake) * 0.5
+            loss_D = (loss_D_real + loss_D_fake) * 0.5
 
         optimizer_D.zero_grad()
-        loss_D.backward()
-        optimizer_D.step()
+        scaler_D.scale(loss_D).backward()
+        scaler_D.step(optimizer_D)
+        scaler_D.update()
 
         # ── Phase 2: Train the generator ──────────────────────────────────
-        # Discriminator weights are not updated here — only optimizer_G.step()
+        with autocast(enabled=use_amp):
+            fake_dose = generator(real_input)
+            # No .detach() here — we need gradients to flow back into the generator
 
-        fake_dose = generator(real_input)
-        # No .detach() here — we need gradients to flow back into the generator
+            fake_pair = torch.cat([real_input, fake_dose], dim=1)
+            pred_fake = discriminator(fake_pair)
 
-        fake_pair = torch.cat([real_input, fake_dose], dim=1)
-        pred_fake = discriminator(fake_pair)
-
-        # Adversarial loss: fool the discriminator into thinking fake is real
-        loss_G_adv = criterion_GAN(pred_fake, target_is_real=True)
-
-        # Voxel loss: stay close to the real dose map
-        loss_G_voxel = criterion_voxel(fake_dose, real_dose)
-
-        # Combined generator loss
-        loss_G = loss_G_adv + lambda_voxel * loss_G_voxel
+            loss_G_adv   = criterion_GAN(pred_fake, target_is_real=True)
+            loss_G_voxel = criterion_voxel(fake_dose, real_dose)
+            loss_G       = loss_G_adv + lambda_voxel * loss_G_voxel
 
         optimizer_G.zero_grad()
-        loss_G.backward()
-        optimizer_G.step()
+        scaler_G.scale(loss_G).backward()
+        scaler_G.step(optimizer_G)
+        scaler_G.update()
 
         total_loss_D += loss_D.item()
         total_loss_G += loss_G.item()
@@ -105,6 +102,7 @@ def validate(
     val_loader:      DataLoader,
     criterion_voxel: nn.L1Loss,
     device:          torch.device,
+    use_amp:         bool,
     ) -> float:
     """
     Runs the generator on the validation set and returns average L1 loss.
@@ -117,15 +115,13 @@ def validate(
     total_loss = 0.0
 
     with torch.no_grad():
-        # torch.no_grad() tells PyTorch not to track gradients at all.
-        # During validation we are never calling .backward(), so storing
-        # the computation graph would just waste GPU memory.
         for batch in tqdm(val_loader, desc="Validating", leave=False):
             real_input = batch["input"].to(device)
             real_dose  = batch["dose"].to(device)
 
-            fake_dose = generator(real_input)
-            loss      = criterion_voxel(fake_dose, real_dose)
+            with autocast(enabled=use_amp):
+                fake_dose = generator(real_input)
+                loss      = criterion_voxel(fake_dose, real_dose)
             total_loss += loss.item()
 
     generator.train()  # switch back to training mode before returning
@@ -139,16 +135,18 @@ def main():
         project = cfg.PROJECT_NAME,
         name    = cfg.RUN_NAME,
         config  = {
-            "fold":         cfg.FOLD,
-            "epochs":       cfg.EPOCHS,
-            "batch_size":   cfg.BATCH_SIZE,
-            "lr_G":         cfg.LR_G,
-            "lr_D":         cfg.LR_D,
-            "lambda_voxel": cfg.LAMBDA_VOXEL,
-            "ngf":          cfg.NGF,
-            "ndf":          cfg.NDF,
-            "n_layers":     cfg.N_LAYERS,
-            "use_lsgan":    cfg.USE_LSGAN,
+            "fold":                    cfg.FOLD,
+            "epochs":                  cfg.EPOCHS,
+            "batch_size":              cfg.BATCH_SIZE,
+            "lr_G":                    cfg.LR_G,
+            "lr_D":                    cfg.LR_D,
+            "lambda_voxel":            cfg.LAMBDA_VOXEL,
+            "ngf":                     cfg.NGF,
+            "ndf":                     cfg.NDF,
+            "n_layers":                cfg.N_LAYERS,
+            "use_lsgan":               cfg.USE_LSGAN,
+            "use_amp":                 cfg.USE_AMP,
+            "early_stopping_patience": cfg.EARLY_STOPPING_PATIENCE,
         }
     )
 
@@ -196,8 +194,12 @@ def main():
     criterion_GAN = GANLoss(use_lsgan=cfg.USE_LSGAN).to(device)
     criterion_voxel = nn.L1Loss()
 
+    scaler_G = GradScaler(enabled=cfg.USE_AMP)
+    scaler_D = GradScaler(enabled=cfg.USE_AMP)
+
     # ── Training loop ──────────────────────────────────────────────────────
-    best_val_loss = float("inf")
+    best_val_loss   = float("inf")
+    epochs_no_improve = 0
 
     for epoch in range(1, cfg.EPOCHS + 1):
         train_losses = train_one_epoch(
@@ -205,12 +207,10 @@ def main():
             optimizer_G, optimizer_D,
             criterion_GAN, criterion_voxel,
             cfg.LAMBDA_VOXEL, device,
+            scaler_G, scaler_D, cfg.USE_AMP,
         )
-        val_loss = validate(generator, val_loader, criterion_voxel, device)
+        val_loss = validate(generator, val_loader, criterion_voxel, device, cfg.USE_AMP)
 
-        # ── Log to W&B ────────────────────────────────────────────────────
-        # This sends all losses to your dashboard after every epoch.
-        # You'll see live training curves at wandb.ai while training runs.
         wandb.log({
             "epoch":    epoch,
             "loss_D":   train_losses["loss_D"],
@@ -227,6 +227,7 @@ def main():
 
         if val_loss < best_val_loss:
             best_val_loss = val_loss
+            epochs_no_improve = 0
             ckpt_path = cfg.CKPT_DIR / f"dosegan_fold{cfg.FOLD}_best.pt"
             torch.save({
                 "epoch":         epoch,
@@ -238,6 +239,13 @@ def main():
             }, ckpt_path)
             log.info(f"  ✓ Checkpoint saved: {ckpt_path}")
             wandb.save(str(ckpt_path))  # also back up checkpoint to W&B cloud
+        else:
+            epochs_no_improve += 1
+            log.info(f"  No improvement for {epochs_no_improve}/{cfg.EARLY_STOPPING_PATIENCE} epochs")
+            if epochs_no_improve >= cfg.EARLY_STOPPING_PATIENCE:
+                log.info(f"Early stopping triggered at epoch {epoch}")
+                wandb.log({"early_stop_epoch": epoch})
+                break
 
     wandb.finish()  # cleanly close the W&B run when training ends
 
