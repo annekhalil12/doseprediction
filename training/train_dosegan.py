@@ -154,7 +154,7 @@ def main():
     # logged so you can reproduce any run exactly from the dashboard.
     wandb.init(
         project = cfg.PROJECT_NAME,
-        name    = cfg.RUN_NAME,
+        name    = f"{cfg.RUN_NAME}_fold{cfg.FOLD}",
         config  = {
             "fold":         cfg.FOLD,
             "epochs":       cfg.EPOCHS,

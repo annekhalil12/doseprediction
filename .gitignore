@@ -18,9 +18,10 @@ data/pickles/
 !data/preprocessing_summary.csv
 
 # Training outputs — ignore everything; nothing here is committed
-outputs/checkpoints_dosegan/
+outputs/checkpoints_*/
 outputs/visualisations/
 outputs/logs/
+outputs/evaluation/
 
 # Personal context files
 docs/
