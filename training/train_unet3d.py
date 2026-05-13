@@ -72,7 +72,7 @@ def main():
 
     wandb.init(
         project = cfg.PROJECT_NAME,
-        name    = cfg.RUN_NAME.replace("fold0", f"fold{cfg.FOLD}"),
+        name    = f"{cfg.RUN_NAME}_fold{cfg.FOLD}",
         config  = {
             "fold":               cfg.FOLD,
             "epochs":             cfg.EPOCHS,
@@ -103,6 +103,8 @@ def main():
         val_ds, batch_size=1,
         shuffle=False, num_workers=cfg.NUM_WORKERS, pin_memory=True,
     )
+
+    torch.manual_seed(42)
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     log.info(f"Training on: {device} | fold={cfg.FOLD}")

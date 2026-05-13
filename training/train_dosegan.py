@@ -191,9 +191,11 @@ def main():
         shuffle=False, num_workers=cfg.NUM_WORKERS, pin_memory=True,
     )
 
+    torch.manual_seed(42)
+
     # ── Models, optimizers, losses ─────────────────────────────────────────
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    log.info(f"Training on: {device}")
+    log.info(f"Training on: {device} | fold={cfg.FOLD}")
 
     generator = UnetGenerator3d(
         input_nc=cfg.INPUT_NC, output_nc=cfg.OUTPUT_NC,
@@ -204,6 +206,11 @@ def main():
         input_nc=cfg.INPUT_NC + cfg.OUTPUT_NC,  # 9 + 1 = 10
         ndf=cfg.NDF, n_layers=cfg.N_LAYERS,
     ).to(device)
+
+    n_params_G = sum(p.numel() for p in generator.parameters())
+    n_params_D = sum(p.numel() for p in discriminator.parameters())
+    log.info(f"Generator params: {n_params_G:,} ({n_params_G/1e6:.1f}M)")
+    log.info(f"Discriminator params: {n_params_D:,} ({n_params_D/1e6:.1f}M)")
 
     optimizer_G = torch.optim.Adam(
         generator.parameters(), lr=cfg.LR_G, betas=(cfg.BETA1, cfg.BETA2)

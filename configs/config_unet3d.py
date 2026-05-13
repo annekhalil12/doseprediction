@@ -12,7 +12,7 @@ CKPT_DIR   = Path("outputs/checkpoints_unet3d")
 
 # ── Experiment identity ────────────────────────────────────────────────────
 PROJECT_NAME = "doseprediction-lundprobe"
-RUN_NAME     = "unet3d_fold0_ch32_snellius"
+RUN_NAME     = "unet3d_ch32_snellius"   # fold number appended at runtime
 
 # ── Cross-validation ───────────────────────────────────────────────────────
 FOLD = 0
@@ -25,8 +25,8 @@ NUM_WORKERS = 4
 # ── Model architecture ─────────────────────────────────────────────────────
 INPUT_NC      = 9    # 8 structure masks + sCT
 OUTPUT_NC     = 1    # predicted dose
-CHANNELS      = (32, 64, 128, 256, 256)  # feature maps at each U-Net level
-STRIDES       = (2, 2, 2, 2)             # downsampling factor per transition
+CHANNELS      = (32, 64, 128, 256, 256, 256)  # feature maps at each U-Net level
+STRIDES       = (2, 2, 2, 2, 2)              # downsampling factor per transition
 NUM_RES_UNITS = 2                         # residual units per level (0 = plain conv)
 
 # ── Optimizer ──────────────────────────────────────────────────────────────
