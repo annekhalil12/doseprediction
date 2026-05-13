@@ -3,6 +3,7 @@
 # Shared preprocessing config lives in config_preprocessing_shared.py.
 # DoseGAN hyperparameters (lr, lambda, ngf) live in config_dosegan.py.
 
+import argparse
 import sys
 from tqdm import tqdm
 import torch
@@ -141,6 +142,13 @@ def validate(
     return total_loss / len(val_loader)
 
 def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--fold", type=int, default=None,
+                        help="Override cfg.FOLD (0–4). If omitted, uses value in config_dosegan.py.")
+    args, _ = parser.parse_known_args()
+    if args.fold is not None:
+        cfg.FOLD = args.fold
+
     # ── W&B initialisation ─────────────────────────────────────────────────
     # This creates a new run in your W&B project. Every hyperparameter is
     # logged so you can reproduce any run exactly from the dashboard.
