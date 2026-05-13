@@ -5,6 +5,7 @@
 
 import torch
 import torch.nn as nn
+from torch.cuda.amp import GradScaler, autocast
 from torch.utils.data import DataLoader
 from pathlib import Path
 
@@ -14,7 +15,7 @@ from configs import config_dosegan as cfg
 
 def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    print(f"Device: {device}")
+    print(f"Device: {device} | AMP: {cfg.USE_AMP}")
 
     # ── Dataset — just 2 batches ───────────────────────────────────────────
     train_ds = LUNDPROBEDataset(
@@ -36,11 +37,14 @@ def main():
         ndf=16, n_layers=3,  # use fewer filters and layers for smoke test
     ).to(device)
 
-    criterion_GAN = GANLoss(use_lsgan=cfg.USE_LSGAN).to(device)
+    criterion_GAN   = GANLoss(use_lsgan=cfg.USE_LSGAN).to(device)
     criterion_voxel = nn.L1Loss()
 
     optimizer_G = torch.optim.Adam(generator.parameters(),     lr=cfg.LR_G)
     optimizer_D = torch.optim.Adam(discriminator.parameters(), lr=cfg.LR_D)
+
+    scaler_G = GradScaler(enabled=cfg.USE_AMP)
+    scaler_D = GradScaler(enabled=cfg.USE_AMP)
 
     # ── 2 batches only ────────────────────────────────────────────────────
     torch.cuda.empty_cache()
@@ -55,27 +59,31 @@ def main():
         print(f"Batch {i} | input: {real_input.shape} | dose: {real_dose.shape}")
 
         # Phase 1 — discriminator
-        fake_dose = generator(real_input).detach()
-        real_pair = torch.cat([real_input, real_dose], dim=1)
-        fake_pair = torch.cat([real_input, fake_dose], dim=1)
-        loss_D = (
-            criterion_GAN(discriminator(real_pair), target_is_real=True) +
-            criterion_GAN(discriminator(fake_pair), target_is_real=False)
-        ) * 0.5
+        with autocast(enabled=cfg.USE_AMP):
+            fake_dose = generator(real_input).detach()
+            real_pair = torch.cat([real_input, real_dose], dim=1)
+            fake_pair = torch.cat([real_input, fake_dose], dim=1)
+            loss_D = (
+                criterion_GAN(discriminator(real_pair), target_is_real=True) +
+                criterion_GAN(discriminator(fake_pair), target_is_real=False)
+            ) * 0.5
         optimizer_D.zero_grad()
-        loss_D.backward()
-        optimizer_D.step()
+        scaler_D.scale(loss_D).backward()
+        scaler_D.step(optimizer_D)
+        scaler_D.update()
 
         # Phase 2 — generator
-        fake_dose    = generator(real_input)
-        fake_pair    = torch.cat([real_input, fake_dose], dim=1)
-        loss_G = (
-            criterion_GAN(discriminator(fake_pair), target_is_real=True) +
-            cfg.LAMBDA_VOXEL * criterion_voxel(fake_dose, real_dose)
-        )
+        with autocast(enabled=cfg.USE_AMP):
+            fake_dose = generator(real_input)
+            fake_pair = torch.cat([real_input, fake_dose], dim=1)
+            loss_G = (
+                criterion_GAN(discriminator(fake_pair), target_is_real=True) +
+                cfg.LAMBDA_VOXEL * criterion_voxel(fake_dose, real_dose)
+            )
         optimizer_G.zero_grad()
-        loss_G.backward()
-        optimizer_G.step()
+        scaler_G.scale(loss_G).backward()
+        scaler_G.step(optimizer_G)
+        scaler_G.update()
 
         print(f"  loss_D: {loss_D.item():.4f} | loss_G: {loss_G.item():.4f}")
 
