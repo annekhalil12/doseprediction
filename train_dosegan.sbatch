@@ -1,9 +1,9 @@
 #!/bin/bash
 #SBATCH --job-name=dosegan_fold0
-#SBATCH --partition=gpu
+#SBATCH --partition=gpu_h100
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
-#SBATCH --cpus-per-task=4
+#SBATCH --cpus-per-task=16
 #SBATCH --gpus=1
 #SBATCH --mem=32G
 #SBATCH --time=24:00:00
