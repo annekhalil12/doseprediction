@@ -38,8 +38,9 @@ def train_one_epoch(
     generator.train()
     discriminator.train()
 
-    total_loss_D = 0.0
-    total_loss_G = 0.0
+    total_loss_D  = 0.0
+    total_loss_G  = 0.0
+    total_loss_L1 = 0.0
 
     for batch in tqdm(dataloader, desc="Training", leave=False):
         real_input = batch["input"].to(device)  # (B, 9, D, H, W)  — sCT + structure masks
@@ -91,13 +92,15 @@ def train_one_epoch(
         loss_G.backward()
         optimizer_G.step()
 
-        total_loss_D += loss_D.item()
-        total_loss_G += loss_G.item()
+        total_loss_D  += loss_D.item()
+        total_loss_G  += loss_G.item()
+        total_loss_L1 += loss_G_voxel.item()
 
     n = len(dataloader)
     return {
-        "loss_D": total_loss_D / n,
-        "loss_G": total_loss_G / n,
+        "loss_D":    total_loss_D  / n,
+        "loss_G":    total_loss_G  / n,
+        "train_L1":  total_loss_L1 / n,
     }
 
 def validate(
@@ -212,16 +215,18 @@ def main():
         # This sends all losses to your dashboard after every epoch.
         # You'll see live training curves at wandb.ai while training runs.
         wandb.log({
-            "epoch":    epoch,
-            "loss_D":   train_losses["loss_D"],
-            "loss_G":   train_losses["loss_G"],
-            "val_L1":   val_loss,
+            "epoch":      epoch,
+            "loss_D":     train_losses["loss_D"],
+            "loss_G":     train_losses["loss_G"],
+            "train_L1":   train_losses["train_L1"],
+            "val_L1":     val_loss,
         })
 
         log.info(
             f"Epoch {epoch:03d} | "
             f"loss_D: {train_losses['loss_D']:.4f} | "
             f"loss_G: {train_losses['loss_G']:.4f} | "
+            f"train_L1: {train_losses['train_L1']:.4f} | "
             f"val_L1: {val_loss:.4f}"
         )
 
