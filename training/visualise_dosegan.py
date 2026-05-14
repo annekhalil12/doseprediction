@@ -27,7 +27,7 @@ def main():
 
     generator = UnetGenerator3d(
         input_nc=cfg.INPUT_NC, output_nc=cfg.OUTPUT_NC,
-        num_downs=cfg.NUM_DOWNS, ngf=cfg.NGF,
+        ngf=cfg.NGF,
     ).to(device)
 
     generator.load_state_dict(checkpoint["generator"])

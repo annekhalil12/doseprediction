@@ -165,13 +165,20 @@ def main():
             "ngf":          cfg.NGF,
             "ndf":          cfg.NDF,
             "n_layers":     cfg.N_LAYERS,
-            "num_downs":    cfg.NUM_DOWNS,
             "use_lsgan":           cfg.USE_LSGAN,
             "early_stop_patience": cfg.EARLY_STOP_PATIENCE,
         }
     )
 
     cfg.CKPT_DIR.mkdir(parents=True, exist_ok=True)
+
+    # Seed before DataLoader creation so worker subprocesses inherit a
+    # deterministic parent RNG; worker_init_fn below then offsets each
+    # worker so augmentation is reproducible across reruns.
+    torch.manual_seed(42)
+
+    def _seed_worker(worker_id: int) -> None:
+        torch.manual_seed(42 + worker_id)
 
     # ── Datasets and dataloaders ───────────────────────────────────────────
     train_ds = LUNDPROBEDataset(
@@ -185,13 +192,13 @@ def main():
     train_loader = DataLoader(
         train_ds, batch_size=cfg.BATCH_SIZE,
         shuffle=True, num_workers=cfg.NUM_WORKERS, pin_memory=True,
+        worker_init_fn=_seed_worker,
     )
     val_loader = DataLoader(
         val_ds, batch_size=1,
         shuffle=False, num_workers=cfg.NUM_WORKERS, pin_memory=True,
+        worker_init_fn=_seed_worker,
     )
-
-    torch.manual_seed(42)
 
     # ── Models, optimizers, losses ─────────────────────────────────────────
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -199,7 +206,7 @@ def main():
 
     generator = UnetGenerator3d(
         input_nc=cfg.INPUT_NC, output_nc=cfg.OUTPUT_NC,
-        num_downs=cfg.NUM_DOWNS, ngf=cfg.NGF,
+        ngf=cfg.NGF,
     ).to(device)
 
     discriminator = NLayerDiscriminator(

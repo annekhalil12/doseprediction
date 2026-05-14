@@ -16,7 +16,7 @@ CKPT_DIR   = Path("outputs/checkpoints_dosegan")
 # Change RUN_NAME when you change anything meaningful — this is what shows
 # up in the W&B dashboard so you can tell runs apart at a glance.
 PROJECT_NAME = "doseprediction-lundprobe"
-RUN_NAME     = "dosegan_ngf32_sigmoid_snellius"   # fold number appended at runtime
+RUN_NAME     = "dosegan_ngf32_tanh_snellius"   # fold number appended at runtime
 
 # ── Cross-validation ───────────────────────────────────────────────────────
 FOLD = 0  # which fold is held out as validation this run (0–4)
@@ -32,7 +32,6 @@ OUTPUT_NC = 1   # predicted dose volume
 NGF       = 32  # base number of generator filters — doubles at each U-Net level
 NDF       = 32  # base number of discriminator filters
 N_LAYERS  = 3   # number of discriminator layers
-NUM_DOWNS = 5   # generator U-Net depth (number of down-sampling levels)
 
 # ── Optimizers ─────────────────────────────────────────────────────────────
 LR_G   = 2e-4         # generator learning rate

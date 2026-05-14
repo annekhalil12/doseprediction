@@ -87,6 +87,14 @@ def main():
 
     cfg.CKPT_DIR.mkdir(parents=True, exist_ok=True)
 
+    # Seed before DataLoader creation so worker subprocesses inherit a
+    # deterministic parent RNG; worker_init_fn below then offsets each
+    # worker so augmentation is reproducible across reruns.
+    torch.manual_seed(42)
+
+    def _seed_worker(worker_id: int) -> None:
+        torch.manual_seed(42 + worker_id)
+
     train_ds = LUNDPROBEDataset(
         split_csv=cfg.SPLIT_CSV, pickle_dir=cfg.PICKLE_DIR,
         split="train", fold=cfg.FOLD,
@@ -98,13 +106,13 @@ def main():
     train_loader = DataLoader(
         train_ds, batch_size=cfg.BATCH_SIZE,
         shuffle=True, num_workers=cfg.NUM_WORKERS, pin_memory=True,
+        worker_init_fn=_seed_worker,
     )
     val_loader = DataLoader(
         val_ds, batch_size=1,
         shuffle=False, num_workers=cfg.NUM_WORKERS, pin_memory=True,
+        worker_init_fn=_seed_worker,
     )
-
-    torch.manual_seed(42)
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     log.info(f"Training on: {device} | fold={cfg.FOLD}")

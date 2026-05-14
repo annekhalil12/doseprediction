@@ -44,7 +44,7 @@ class GANLoss(nn.Module):
 
 # 3D version of UnetGenerator
 class UnetGenerator3d(nn.Module):
-    def __init__(self, input_nc, output_nc, num_downs, ngf=32,
+    def __init__(self, input_nc, output_nc, ngf=32,
                  norm_layer=nn.BatchNorm3d, use_dropout=False, gpu_ids=[]):  # TODO
         super(UnetGenerator3d, self).__init__()
         self.gpu_ids = gpu_ids
@@ -70,7 +70,7 @@ class UnetGenerator3d(nn.Module):
                                                norm_layer=norm_layer)
         self.outer_block = nn.Sequential(
             *[nn.Conv3d(ngf * 2, output_nc, kernel_size=4, stride=1, padding=3, dilation=2),
-              nn.Sigmoid()])
+              nn.Tanh()])
 
         self.model = unet_block
 

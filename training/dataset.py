@@ -85,6 +85,13 @@ from monai.transforms import (
 log = logging.getLogger(__name__)
 
 
+# Position of the sCT intensity channel inside the cached pickle's input tensor.
+# Today the pickle has 9 channels (0–7 = structure masks, 8 = sCT). When the
+# geometric channels (currently indices 8–14 in CHANNEL_MAP) are added, the
+# pickle will expand to 16 channels and this constant becomes 15.
+SCT_PICKLE_IDX = 8
+
+
 class LUNDPROBEDataset(Dataset):
     """
     PyTorch Dataset for the preprocessed LUND-PROBE cohort.
@@ -121,6 +128,16 @@ class LUNDPROBEDataset(Dataset):
 
         self.pickle_dir = Path(pickle_dir)
         self.channels   = channels
+
+        # Resolve where the sCT channel lives after the optional channel subset
+        # is applied. None means "no sCT in the returned tensor" — intensity
+        # augmentation is skipped in that case.
+        if channels is None:
+            self._sct_idx: Optional[int] = SCT_PICKLE_IDX
+        elif SCT_PICKLE_IDX in channels:
+            self._sct_idx = channels.index(SCT_PICKLE_IDX)
+        else:
+            self._sct_idx = None
 
         # Validate fold argument — it is required for train/val splits
         # because the CSV no longer has a fixed "train"/"val" label.
@@ -228,10 +245,12 @@ class LUNDPROBEDataset(Dataset):
         Returns
         -------
         dict with keys:
-          "input"      : (C, 128, 256, 320) float32 tensor — model input
-          "dose"       : (1, 128, 256, 320) float32 tensor — ground-truth dose
-          "ptv_mask"   : (1, 128, 256, 320) bool tensor   — for evaluation
-          "patient_id" : str                               — for logging/debugging
+          "input"        : (C, 128, 256, 320) float32 tensor — model input
+          "dose"         : (1, 128, 256, 320) float32 tensor — ground-truth dose
+          "ptv_mask"     : (1, 128, 256, 320) float32 tensor — for evaluation
+          "rectum_mask"  : (1, 128, 256, 320) float32 tensor — for evaluation
+          "bladder_mask" : (1, 128, 256, 320) float32 tensor — for evaluation
+          "patient_id"   : str                                — for logging/debugging
         """
         patient_id  = self.patient_ids[index]
         pickle_path = self.pickle_dir / f"{patient_id}.pkl"
@@ -248,11 +267,17 @@ class LUNDPROBEDataset(Dataset):
         # ── Convert NumPy arrays to PyTorch tensors ───────────────────────
         # PyTorch models expect float32 tensors. The pickle already stores
         # float32 NumPy arrays, so this conversion is zero-copy efficient.
-        input_tensor = torch.from_numpy(data["input"])   # (9, D, H, W)
-        dose_tensor  = torch.from_numpy(data["dose"])    # (D, H, W)
-        ptv_tensor   = torch.from_numpy(
+        input_tensor    = torch.from_numpy(data["input"])   # (9, D, H, W)
+        dose_tensor     = torch.from_numpy(data["dose"])    # (D, H, W)
+        ptv_tensor      = torch.from_numpy(
             data["ptv_mask"].astype("float32")
-        )                                                # (D, H, W)
+        )                                                   # (D, H, W)
+        rectum_tensor   = torch.from_numpy(
+            data["rectum_mask"].astype("float32")
+        )                                                   # (D, H, W)
+        bladder_tensor  = torch.from_numpy(
+            data["bladder_mask"].astype("float32")
+        )                                                   # (D, H, W)
 
         # ── Select channel subset if requested ────────────────────────────
         # The shared cache has 9 channels (0–8). If channels=[0,1,2,7,8],
@@ -266,8 +291,10 @@ class LUNDPROBEDataset(Dataset):
         # PyTorch 3D convolutions expect (batch, channels, D, H, W).
         # The DataLoader adds the batch dimension automatically; here we add
         # the channel dimension (=1) so the shape is consistent with the input.
-        dose_tensor = dose_tensor.unsqueeze(0)    # (1, D, H, W)
-        ptv_tensor  = ptv_tensor.unsqueeze(0)     # (1, D, H, W)
+        dose_tensor    = dose_tensor.unsqueeze(0)     # (1, D, H, W)
+        ptv_tensor     = ptv_tensor.unsqueeze(0)      # (1, D, H, W)
+        rectum_tensor  = rectum_tensor.unsqueeze(0)   # (1, D, H, W)
+        bladder_tensor = bladder_tensor.unsqueeze(0)  # (1, D, H, W)
 
         # ── Apply augmentation (training only) ────────────────────────────
         if self.geometric_transform is not None:
@@ -280,17 +307,22 @@ class LUNDPROBEDataset(Dataset):
             input_tensor = augmented["input"]
             dose_tensor  = augmented["dose"]
 
-        if self.intensity_transform is not None:
+        if self.intensity_transform is not None and self._sct_idx is not None:
             # Extract sCT channel, scale/shift it, put it back.
-            # Indexing [8:9] keeps the channel dimension so MONAI
-            # receives a (1, D, H, W) tensor as expected.
-            sct_channel = input_tensor[8:9]
+            # Slicing keeps the channel dimension so MONAI receives a
+            # (1, D, H, W) tensor as expected. The slot is looked up
+            # dynamically so a non-default `channels` argument can't
+            # silently mis-augment a structure mask.
+            s = self._sct_idx
+            sct_channel = input_tensor[s:s + 1]
             sct_channel = self.intensity_transform(sct_channel)
-            input_tensor[8] = sct_channel[0]
+            input_tensor[s] = sct_channel[0]
             
         return {
-            "input":      input_tensor,
-            "dose":       dose_tensor,
-            "ptv_mask":   ptv_tensor,
-            "patient_id": patient_id,
+            "input":        input_tensor,
+            "dose":         dose_tensor,
+            "ptv_mask":     ptv_tensor,
+            "rectum_mask":  rectum_tensor,
+            "bladder_mask": bladder_tensor,
+            "patient_id":   patient_id,
         }

@@ -12,7 +12,6 @@
 import argparse
 import csv
 import logging
-import pickle
 import sys
 from pathlib import Path
 
@@ -119,7 +118,7 @@ def evaluate(fold: int, split: str) -> None:
 
     generator = UnetGenerator3d(
         input_nc=cfg.INPUT_NC, output_nc=cfg.OUTPUT_NC,
-        num_downs=cfg.NUM_DOWNS, ngf=cfg.NGF,
+        ngf=cfg.NGF,
     ).to(device)
     generator.load_state_dict(checkpoint["generator"])
     generator.eval()
@@ -156,13 +155,10 @@ def evaluate(fold: int, split: str) -> None:
             true_gy = real_dose[0, 0].cpu().numpy() * DOSE_SCALE
             body    = real_input[0, 7].cpu().numpy()   # channel 7 = BODY
 
-            # Load structure masks directly from pickle (not in batch by default)
-            pkl_path = cfg.PICKLE_DIR / f"{patient_id}.pkl"
-            with open(pkl_path, "rb") as f:
-                pkl = pickle.load(f)
-            ptv_mask     = pkl["ptv_mask"].astype(np.float32)
-            rectum_mask  = pkl["rectum_mask"].astype(np.float32)
-            bladder_mask = pkl["bladder_mask"].astype(np.float32)
+            # Structure masks come from the Dataset (already loaded once per patient).
+            ptv_mask     = batch["ptv_mask"][0, 0].numpy()
+            rectum_mask  = batch["rectum_mask"][0, 0].numpy()
+            bladder_mask = batch["bladder_mask"][0, 0].numpy()
 
             # SRQ1 — global dose accuracy
             mae, rmse = body_mae_rmse(pred_gy, true_gy, body)

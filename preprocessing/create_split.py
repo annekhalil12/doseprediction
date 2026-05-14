@@ -76,11 +76,13 @@ N_FOLDS   = 5      # number of cross-validation folds on the remaining 85%
 SEED      = 42     # fixed seed → reproducible splits every run
 
 # ---------------------------------------------------------------------------
-# Load the preprocessing summary to get the list of successful patients
+# Load the preprocessing summary to get the list of usable patients
 # ---------------------------------------------------------------------------
-# We only include patients that preprocessed successfully. Any failed patients
-# recorded in preprocessing_summary.csv are excluded — you don't want to
-# silently try to load a missing pickle during training.
+# We include patients whose pickle exists on disk — that is, any row with
+# status in {"success", "skipped"}. "skipped" is emitted by preprocess_all.py
+# when a patient was already cached from a previous run, so excluding it would
+# silently drop those patients from the split on subsequent regenerations.
+# Only "failed" rows are excluded — those have no pickle to load.
 summary_path = SUMMARY_CSV
 if not summary_path.exists():
     raise FileNotFoundError(
@@ -92,10 +94,10 @@ successful_patients = []
 with open(summary_path, newline="") as f:
     reader = csv.DictReader(f)
     for row in reader:
-        if row["status"] == "success":
+        if row["status"] in ("success", "skipped"):
             successful_patients.append(row["patient_id"])
 
-log.info(f"Patients with successful preprocessing: {len(successful_patients)}")
+log.info(f"Patients with usable pickles (success + skipped): {len(successful_patients)}")
 
 # ---------------------------------------------------------------------------
 # Infer acquisition group from patient ID prefix
