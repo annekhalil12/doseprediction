@@ -71,8 +71,10 @@ def main():
         cfg.FOLD = args.fold
 
     wandb.init(
-        project = cfg.PROJECT_NAME,
-        name    = f"{cfg.RUN_NAME}_fold{cfg.FOLD}",
+        project  = cfg.PROJECT_NAME,
+        name     = f"{cfg.RUN_NAME}_fold{cfg.FOLD}",
+        group    = cfg.RUN_NAME,   # collapses all 5 folds into one experiment row in the UI
+        job_type = "train",
         config  = {
             "fold":               cfg.FOLD,
             "epochs":             cfg.EPOCHS,

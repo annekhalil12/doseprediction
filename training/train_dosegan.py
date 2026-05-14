@@ -153,8 +153,10 @@ def main():
     # This creates a new run in your W&B project. Every hyperparameter is
     # logged so you can reproduce any run exactly from the dashboard.
     wandb.init(
-        project = cfg.PROJECT_NAME,
-        name    = f"{cfg.RUN_NAME}_fold{cfg.FOLD}",
+        project  = cfg.PROJECT_NAME,
+        name     = f"{cfg.RUN_NAME}_fold{cfg.FOLD}",
+        group    = cfg.RUN_NAME,   # collapses all 5 folds into one experiment row in the UI
+        job_type = "train",
         config  = {
             "fold":         cfg.FOLD,
             "epochs":       cfg.EPOCHS,
