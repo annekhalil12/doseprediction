@@ -17,6 +17,7 @@ from pathlib import Path
 
 import numpy as np
 import torch
+import wandb
 from torch.utils.data import DataLoader
 
 from configs import config_dosegan as cfg
@@ -107,6 +108,18 @@ def load_acq_group_map(split_csv: Path) -> dict:
 def evaluate(fold: int, split: str) -> None:
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     log.info(f"Evaluating on: {device} | fold={fold} | split='{split}'")
+
+    # ── W&B initialisation ──────────────────────────────────────────────────
+    # Sits inside the same group as the training run that produced the
+    # checkpoint, with job_type="eval" so train and eval runs cluster
+    # together in the UI but stay distinguishable.
+    wandb.init(
+        project  = cfg.PROJECT_NAME,
+        name     = f"{cfg.RUN_NAME}_fold{fold}_eval_{split}",
+        group    = cfg.RUN_NAME,
+        job_type = "eval",
+        config   = {"fold": fold, "split": split},
+    )
 
     # ── Load generator from best checkpoint ──────────────────────────────────
     ckpt_path = cfg.CKPT_DIR / f"dosegan_fold{fold}_best.pt"
@@ -201,6 +214,12 @@ def evaluate(fold: int, split: str) -> None:
 
     log.info(f"\nResults saved: {out_path}")
 
+    # ── Per-patient table to W&B (browsable in the UI) ────────────────────────
+    fieldnames = list(rows[0].keys())
+    table = wandb.Table(columns=fieldnames,
+                        data=[[r[c] for c in fieldnames] for r in rows])
+    wandb.log({"per_patient": table})
+
     # ── Summary table ─────────────────────────────────────────────────────────
     maes  = [r["body_MAE_Gy"]  for r in rows]
     rmses = [r["body_RMSE_Gy"] for r in rows]
@@ -208,6 +227,12 @@ def evaluate(fold: int, split: str) -> None:
     log.info("\n── Overall (" + split + ") ───────────────────────────────")
     log.info(f"  body MAE  : {np.mean(maes):.3f} ± {np.std(maes):.3f} Gy")
     log.info(f"  body RMSE : {np.mean(rmses):.3f} ± {np.std(rmses):.3f} Gy")
+
+    wandb.summary["body_MAE_Gy_mean"]  = float(np.mean(maes))
+    wandb.summary["body_MAE_Gy_std"]   = float(np.std(maes))
+    wandb.summary["body_RMSE_Gy_mean"] = float(np.mean(rmses))
+    wandb.summary["body_RMSE_Gy_std"]  = float(np.std(rmses))
+    wandb.summary["n_patients"]        = len(rows)
 
     # SRQ3 — breakdown by acquisition group
     for grp in ("oldAcq", "newAcq"):
@@ -220,6 +245,10 @@ def evaluate(fold: int, split: str) -> None:
         log.info(f"  body MAE  : {np.mean(g_maes):.3f} ± {np.std(g_maes):.3f} Gy")
         log.info(f"  body RMSE : {np.mean(g_rmses):.3f} ± {np.std(g_rmses):.3f} Gy")
 
+        wandb.summary[f"body_MAE_Gy_mean_{grp}"] = float(np.mean(g_maes))
+        wandb.summary[f"body_MAE_Gy_std_{grp}"]  = float(np.std(g_maes))
+        wandb.summary[f"n_patients_{grp}"]       = len(grp_rows)
+
     # DVH summary for PTV (most clinically important)
     log.info("\n── PTV DVH (mean across patients) ───────────────────────")
     for metric in ("D95", "D98", "Dmean", "Dmax"):
@@ -231,6 +260,13 @@ def evaluate(fold: int, split: str) -> None:
             f"true={np.nanmean(true_vals):.2f} Gy  "
             f"diff={np.nanmean(diff_vals):+.2f} ± {np.nanstd(diff_vals):.2f} Gy"
         )
+
+        wandb.summary[f"ptv_{metric}_diff_mean"] = float(np.nanmean(diff_vals))
+        wandb.summary[f"ptv_{metric}_diff_std"]  = float(np.nanstd(diff_vals))
+
+    # Stash the CSV as a run artifact for reproducibility
+    wandb.save(str(out_path), policy="now")
+    wandb.finish()
 
 
 if __name__ == "__main__":
