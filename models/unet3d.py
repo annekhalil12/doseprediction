@@ -21,11 +21,12 @@ from monai.networks.nets import UNet as MonaiUNet
 class UNet3d(nn.Module):
     def __init__(
         self,
-        in_channels:   int   = 9,
-        out_channels:  int   = 1,
-        channels:      tuple = (32, 64, 128, 256, 256),
-        strides:       tuple = (2, 2, 2, 2),
-        num_res_units: int   = 2,
+        in_channels:       int   = 9,
+        out_channels:      int   = 1,
+        channels:          tuple = (32, 64, 128, 256, 256),
+        strides:           tuple = (2, 2, 2, 2),
+        num_res_units:     int   = 2,
+        output_activation: str   = "sigmoid",
     ):
         super().__init__()
 
@@ -40,8 +41,14 @@ class UNet3d(nn.Module):
             norm          = "BATCH",
             dropout       = 0.0,
         )
-        # Sigmoid maps raw logits to [0, 1] — dose is normalised to this range.
-        self.sigmoid = nn.Sigmoid()
+        # Configurable so DoseGAN and U-Net can share the same activation
+        # under the fair-comparison principle.
+        if output_activation == "sigmoid":
+            self.out_act = nn.Sigmoid()
+        elif output_activation == "tanh":
+            self.out_act = nn.Tanh()
+        else:
+            raise ValueError(f"output_activation must be 'sigmoid' or 'tanh', got {output_activation!r}")
 
     def forward(self, x):
-        return self.sigmoid(self.net(x))
+        return self.out_act(self.net(x))

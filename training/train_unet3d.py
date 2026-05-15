@@ -66,9 +66,15 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--fold", type=int, default=None,
                         help="Override cfg.FOLD (0–4).")
+    parser.add_argument("--activation", choices=["sigmoid", "tanh"], default=None,
+                        help="Override cfg.OUTPUT_ACTIVATION. Rewrites the activation token in RUN_NAME.")
     args, _ = parser.parse_known_args()
     if args.fold is not None:
         cfg.FOLD = args.fold
+    if args.activation is not None:
+        # Rewrite the activation token in RUN_NAME so W&B groups stay distinct.
+        cfg.RUN_NAME = cfg.RUN_NAME.replace(cfg.OUTPUT_ACTIVATION, args.activation)
+        cfg.OUTPUT_ACTIVATION = args.activation
 
     wandb.init(
         project  = cfg.PROJECT_NAME,
@@ -83,6 +89,7 @@ def main():
             "channels":           cfg.CHANNELS,
             "strides":            cfg.STRIDES,
             "num_res_units":      cfg.NUM_RES_UNITS,
+            "output_activation":  cfg.OUTPUT_ACTIVATION,
             "early_stop_patience": cfg.EARLY_STOP_PATIENCE,
         }
     )
@@ -120,11 +127,12 @@ def main():
     log.info(f"Training on: {device} | fold={cfg.FOLD}")
 
     model = UNet3d(
-        in_channels   = cfg.INPUT_NC,
-        out_channels  = cfg.OUTPUT_NC,
-        channels      = cfg.CHANNELS,
-        strides       = cfg.STRIDES,
-        num_res_units = cfg.NUM_RES_UNITS,
+        in_channels       = cfg.INPUT_NC,
+        out_channels      = cfg.OUTPUT_NC,
+        channels          = cfg.CHANNELS,
+        strides           = cfg.STRIDES,
+        num_res_units     = cfg.NUM_RES_UNITS,
+        output_activation = cfg.OUTPUT_ACTIVATION,
     ).to(device)
 
     n_params = sum(p.numel() for p in model.parameters())
