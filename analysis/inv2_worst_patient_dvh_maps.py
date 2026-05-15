@@ -10,6 +10,8 @@
 # Run after eval_dosegan.sbatch finishes:
 #   python3 -m analysis.inv2_worst_patient_dvh_maps
 
+import argparse
+import importlib
 import pickle
 import sys
 from pathlib import Path
@@ -19,8 +21,20 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import torch
 
-from configs import config_dosegan as cfg
-from models.dosegan import UnetGenerator3d
+parser = argparse.ArgumentParser()
+parser.add_argument("--model", choices=["dosegan", "unet3d"], default="dosegan",
+                    help="Which model's checkpoints to load.")
+parser.add_argument("--activation", choices=["sigmoid", "tanh"], default=None,
+                    help="(unet3d only) override the activation token in RUN_NAME.")
+args, _ = parser.parse_known_args()
+cfg = importlib.import_module(f"configs.config_{args.model}")
+if args.model == "unet3d" and args.activation is not None:
+    cfg.RUN_NAME = cfg.RUN_NAME.replace(cfg.OUTPUT_ACTIVATION, args.activation)
+    cfg.OUTPUT_ACTIVATION = args.activation
+if args.model == "dosegan":
+    from models.dosegan import UnetGenerator3d as _ModelClass
+else:
+    from models.unet3d import UNet3d as _ModelClass
 
 EVAL_DIR    = Path("outputs/evaluation")
 OUT_DIR     = Path("outputs/analysis")
@@ -43,13 +57,25 @@ def worst_per_fold() -> pd.DataFrame:
     return pd.concat(rows, ignore_index=True)
 
 
-def load_generator(fold: int, device: torch.device) -> UnetGenerator3d:
+def load_generator(fold: int, device: torch.device):
     ckpt_path = CKPT_DIR / f"{cfg.RUN_NAME}_fold{fold}_best.pt"
     ckpt = torch.load(ckpt_path, map_location=device)
-    gen = UnetGenerator3d(input_nc=cfg.INPUT_NC, output_nc=cfg.OUTPUT_NC, ngf=cfg.NGF).to(device)
-    gen.load_state_dict(ckpt["generator"])
-    gen.eval()
-    return gen
+    if args.model == "dosegan":
+        net = _ModelClass(input_nc=cfg.INPUT_NC, output_nc=cfg.OUTPUT_NC, ngf=cfg.NGF).to(device)
+        net.load_state_dict(ckpt["generator"])
+    else:
+        net = _ModelClass(
+            in_channels       = cfg.INPUT_NC,
+            out_channels      = cfg.OUTPUT_NC,
+            channels          = cfg.CHANNELS,
+            strides           = cfg.STRIDES,
+            num_res_units     = cfg.NUM_RES_UNITS,
+            output_activation = cfg.OUTPUT_ACTIVATION,
+        ).to(device)
+        state_key = "model" if "model" in ckpt else "generator"
+        net.load_state_dict(ckpt[state_key])
+    net.eval()
+    return net
 
 
 def cumulative_dvh(dose: np.ndarray, mask: np.ndarray, grid: np.ndarray) -> np.ndarray:
@@ -136,7 +162,7 @@ def main() -> None:
             true = data["dose"] * DOSE_SCALE                                # (D,H,W)
             body = data["input"][7]                                         # (D,H,W)
 
-            out_path = OUT_DIR / f"inv2_worst_{int(row['rank'])}_fold{fold}_{patient_id}.png"
+            out_path = OUT_DIR / f"inv2_{cfg.RUN_NAME}_worst_{int(row['rank'])}_fold{fold}_{patient_id}.png"
             make_figure(
                 patient_id=patient_id, fold=fold, rank=int(row["rank"]),
                 body_mae=float(row["body_MAE_Gy"]),

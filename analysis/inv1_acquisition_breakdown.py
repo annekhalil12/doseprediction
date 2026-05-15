@@ -9,6 +9,8 @@
 # Run after eval_dosegan.sbatch finishes:
 #   python3 -m analysis.inv1_acquisition_breakdown
 
+import argparse
+import importlib
 import sys
 from pathlib import Path
 
@@ -17,7 +19,16 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from scipy import stats
 
-from configs import config_dosegan as cfg
+parser = argparse.ArgumentParser()
+parser.add_argument("--model", choices=["dosegan", "unet3d"], default="dosegan",
+                    help="Which model's eval CSVs to aggregate.")
+parser.add_argument("--activation", choices=["sigmoid", "tanh"], default=None,
+                    help="(unet3d only) override the activation token in RUN_NAME.")
+args, _ = parser.parse_known_args()
+cfg = importlib.import_module(f"configs.config_{args.model}")
+if args.model == "unet3d" and args.activation is not None:
+    cfg.RUN_NAME = cfg.RUN_NAME.replace(cfg.OUTPUT_ACTIVATION, args.activation)
+    cfg.OUTPUT_ACTIVATION = args.activation
 
 EVAL_DIR    = Path("outputs/evaluation")
 OUT_DIR     = Path("outputs/analysis")
@@ -92,7 +103,7 @@ def main() -> None:
     print(f"loaded {len(df)} per-patient rows across folds {FOLDS}")
 
     summary = summarise(df)
-    summary_path = OUT_DIR / "inv1_acquisition_breakdown.csv"
+    summary_path = OUT_DIR / f"inv1_{cfg.RUN_NAME}_acquisition_breakdown.csv"
     summary.to_csv(summary_path)
     print(f"saved: {summary_path}")
     print("\n=== Per fold × group ===")
@@ -110,7 +121,7 @@ def main() -> None:
           f"({'oldAcq worse' if delta > 0 else 'newAcq worse'})")
     print(f"  significant at α=0.05? {'yes' if stats_out['p_value'] < 0.05 else 'no'}")
 
-    boxplot(df, OUT_DIR / "inv1_acquisition_boxplot.png")
+    boxplot(df, OUT_DIR / f"inv1_{cfg.RUN_NAME}_acquisition_boxplot.png")
 
 
 if __name__ == "__main__":
