@@ -68,6 +68,8 @@ def main():
                         help="Override cfg.FOLD (0–4).")
     parser.add_argument("--activation", choices=["sigmoid", "tanh"], default=None,
                         help="Override cfg.OUTPUT_ACTIVATION. Rewrites the activation token in RUN_NAME.")
+    parser.add_argument("--overwrite", action="store_true",
+                        help="Overwrite an existing best checkpoint instead of refusing to start.")
     args, _ = parser.parse_known_args()
     if args.fold is not None:
         cfg.FOLD = args.fold
@@ -75,6 +77,15 @@ def main():
         # Rewrite the activation token in RUN_NAME so W&B groups stay distinct.
         cfg.RUN_NAME = cfg.RUN_NAME.replace(cfg.OUTPUT_ACTIVATION, args.activation)
         cfg.OUTPUT_ACTIVATION = args.activation
+
+    cfg.CKPT_DIR.mkdir(parents=True, exist_ok=True)
+    ckpt_path = cfg.CKPT_DIR / f"{cfg.RUN_NAME}_fold{cfg.FOLD}_best.pt"
+    if ckpt_path.exists() and not args.overwrite:
+        raise FileExistsError(
+            f"Refusing to overwrite existing checkpoint: {ckpt_path}\n"
+            f"Pass --overwrite (or set OVERWRITE=1 for the sbatch) to replace it, "
+            f"or delete it first."
+        )
 
     wandb.init(
         project  = cfg.PROJECT_NAME,
@@ -93,8 +104,6 @@ def main():
             "early_stop_patience": cfg.EARLY_STOP_PATIENCE,
         }
     )
-
-    cfg.CKPT_DIR.mkdir(parents=True, exist_ok=True)
 
     # Seed before DataLoader creation so worker subprocesses inherit a
     # deterministic parent RNG; worker_init_fn below then offsets each
