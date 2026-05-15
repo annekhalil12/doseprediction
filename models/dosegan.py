@@ -43,6 +43,14 @@ class GANLoss(nn.Module):
 
 
 # 3D version of UnetGenerator
+# TODO(2026-05-15) ablation: pass norm_layer=nn.GroupNorm3d or
+# nn.InstanceNorm3d (instead of nn.BatchNorm3d) at instantiation. With
+# BATCH_SIZE=1, BN normalises against single-sample stats and the
+# running mean/var is implicitly fit to the training distribution, which
+# may hurt generalisation to oldAcq/newAcq and the pancreas cohort.
+# Discriminator (NLayerDiscriminator, BlockDiscriminator below) takes
+# the same norm_layer kwarg — flip both in lockstep when running the
+# ablation. Pair with the U-Net norm ablation in models/unet3d.py.
 class UnetGenerator3d(nn.Module):
     def __init__(self, input_nc, output_nc, ngf=32,
                  norm_layer=nn.BatchNorm3d, use_dropout=False, gpu_ids=[]):  # TODO
