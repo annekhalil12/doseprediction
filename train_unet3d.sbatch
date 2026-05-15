@@ -19,4 +19,6 @@ export PYTHONPATH=/gpfs/scratch1/shared/akhalil/data/thesis-doseprediction
 FOLD=${FOLD:-0}
 ACT_ARG=""
 if [ -n "${ACT:-}" ]; then ACT_ARG="--activation ${ACT}"; fi
-python3 training/train_unet3d.py --fold $FOLD $ACT_ARG
+OVERWRITE_ARG=""
+if [ -n "${OVERWRITE:-}" ]; then OVERWRITE_ARG="--overwrite"; fi
+python3 training/train_unet3d.py --fold $FOLD $ACT_ARG $OVERWRITE_ARG
