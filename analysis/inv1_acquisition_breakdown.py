@@ -2,7 +2,7 @@
 # Investigation 1: aggregate per-patient eval CSVs across 5 DoseGAN folds and
 # test whether oldAcq patients are systematically worse than newAcq.
 #
-# Reads:  outputs/evaluation/dosegan_fold{0..4}_val.csv
+# Reads:  outputs/evaluation/{run_name}_fold{0..4}_val.csv
 # Writes: outputs/analysis/inv1_acquisition_breakdown.csv  (summary table)
 #         outputs/analysis/inv1_acquisition_boxplot.png    (boxplot figure)
 #
@@ -17,6 +17,8 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from scipy import stats
 
+from configs import config_dosegan as cfg
+
 EVAL_DIR    = Path("outputs/evaluation")
 OUT_DIR     = Path("outputs/analysis")
 FOLDS       = [0, 1, 2, 3, 4]
@@ -26,7 +28,7 @@ GROUPS      = ["oldAcq", "newAcq"]
 def load_all_folds() -> pd.DataFrame:
     frames = []
     for fold in FOLDS:
-        path = EVAL_DIR / f"dosegan_fold{fold}_val.csv"
+        path = EVAL_DIR / f"{cfg.RUN_NAME}_fold{fold}_val.csv"
         if not path.exists():
             sys.exit(f"missing eval CSV: {path}. Run eval_dosegan.sbatch first.")
         frames.append(pd.read_csv(path))

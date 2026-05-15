@@ -122,7 +122,7 @@ def evaluate(fold: int, split: str) -> None:
     )
 
     # ── Load generator from best checkpoint ──────────────────────────────────
-    ckpt_path = cfg.CKPT_DIR / f"dosegan_fold{fold}_best.pt"
+    ckpt_path = cfg.CKPT_DIR / f"{cfg.RUN_NAME}_fold{fold}_best.pt"
     if not ckpt_path.exists():
         raise FileNotFoundError(
             f"No checkpoint found at {ckpt_path}. Train fold {fold} first."
@@ -205,7 +205,7 @@ def evaluate(fold: int, split: str) -> None:
     # ── Save CSV ──────────────────────────────────────────────────────────────
     out_dir = Path("outputs/evaluation")
     out_dir.mkdir(parents=True, exist_ok=True)
-    out_path = out_dir / f"dosegan_fold{fold}_{split}.csv"
+    out_path = out_dir / f"{cfg.RUN_NAME}_fold{fold}_{split}.csv"
 
     with open(out_path, "w", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=rows[0].keys())

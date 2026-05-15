@@ -19,7 +19,7 @@ def main():
     # ── Load generator from best checkpoint ───────────────────────────────
     # Only the generator is needed at inference time.
     # The discriminator was only used during training.
-    ckpt_path = cfg.CKPT_DIR / f"dosegan_fold{cfg.FOLD}_best.pt"
+    ckpt_path = cfg.CKPT_DIR / f"{cfg.RUN_NAME}_fold{cfg.FOLD}_best.pt"
     if not ckpt_path.exists():
         raise FileNotFoundError(f"Checkpoint not found: {ckpt_path}")
 
@@ -107,7 +107,7 @@ def main():
     # ── Save ──────────────────────────────────────────────────────────────
     out_dir  = Path("outputs/visualisations")
     out_dir.mkdir(parents=True, exist_ok=True)
-    out_path = out_dir / f"dosegan_fold{cfg.FOLD}_{patient_id}_slice{centre_slice}.png"
+    out_path = out_dir / f"{cfg.RUN_NAME}_fold{cfg.FOLD}_{patient_id}_slice{centre_slice}.png"
     plt.tight_layout()
     plt.savefig(out_path, dpi=150, bbox_inches="tight")
     plt.close()

@@ -2,8 +2,8 @@
 # Investigation 2: for the 3 worst-MAE patients in each DoseGAN fold,
 # regenerate predictions and produce DVH curves + spatial error heatmaps.
 #
-# Reads:  outputs/evaluation/dosegan_fold{0..4}_val.csv
-#         outputs/checkpoints_dosegan/dosegan_fold{0..4}_best.pt
+# Reads:  outputs/evaluation/{run_name}_fold{0..4}_val.csv
+#         outputs/checkpoints_dosegan/{run_name}_fold{0..4}_best.pt
 #         data/pickles/<patient_id>.pkl
 # Writes: outputs/analysis/inv2_worst_<rank>_fold{F}_<patient>.png  (15 figures)
 #
@@ -34,7 +34,7 @@ DVH_GRID    = np.linspace(0, 65, 201)   # Gy axis for cumulative DVH
 def worst_per_fold() -> pd.DataFrame:
     rows = []
     for fold in range(5):
-        path = EVAL_DIR / f"dosegan_fold{fold}_val.csv"
+        path = EVAL_DIR / f"{cfg.RUN_NAME}_fold{fold}_val.csv"
         if not path.exists():
             sys.exit(f"missing eval CSV: {path}. Run eval_dosegan.sbatch first.")
         df = pd.read_csv(path).sort_values("body_MAE_Gy", ascending=False)
@@ -44,7 +44,7 @@ def worst_per_fold() -> pd.DataFrame:
 
 
 def load_generator(fold: int, device: torch.device) -> UnetGenerator3d:
-    ckpt_path = CKPT_DIR / f"dosegan_fold{fold}_best.pt"
+    ckpt_path = CKPT_DIR / f"{cfg.RUN_NAME}_fold{fold}_best.pt"
     ckpt = torch.load(ckpt_path, map_location=device)
     gen = UnetGenerator3d(input_nc=cfg.INPUT_NC, output_nc=cfg.OUTPUT_NC, ngf=cfg.NGF).to(device)
     gen.load_state_dict(ckpt["generator"])

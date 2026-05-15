@@ -157,7 +157,7 @@ def main():
         if val_l1 < best_val_loss:
             best_val_loss    = val_l1
             epochs_no_improve = 0
-            ckpt_path = cfg.CKPT_DIR / f"unet3d_fold{cfg.FOLD}_best.pt"
+            ckpt_path = cfg.CKPT_DIR / f"{cfg.RUN_NAME}_fold{cfg.FOLD}_best.pt"
             torch.save({
                 "epoch":      epoch,
                 "model":      model.state_dict(),
@@ -172,7 +172,7 @@ def main():
                 log.info(f"Early stopping at epoch {epoch}")
                 break
 
-    ckpt_path = cfg.CKPT_DIR / f"unet3d_fold{cfg.FOLD}_best.pt"
+    ckpt_path = cfg.CKPT_DIR / f"{cfg.RUN_NAME}_fold{cfg.FOLD}_best.pt"
     if ckpt_path.exists():
         wandb.save(str(ckpt_path), policy="now")
 

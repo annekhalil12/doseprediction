@@ -264,7 +264,7 @@ def main():
         if val_loss < best_val_loss:
             best_val_loss = val_loss
             epochs_no_improve = 0
-            ckpt_path = cfg.CKPT_DIR / f"dosegan_fold{cfg.FOLD}_best.pt"
+            ckpt_path = cfg.CKPT_DIR / f"{cfg.RUN_NAME}_fold{cfg.FOLD}_best.pt"
             torch.save({
                 "epoch":         epoch,
                 "generator":     generator.state_dict(),
@@ -284,7 +284,7 @@ def main():
     # Upload the best checkpoint to W&B exactly once, after training ends.
     # Saving inside the val-improvement branch would re-upload the full 1.5 GB
     # checkpoint on every improvement.
-    best_ckpt_path = cfg.CKPT_DIR / f"dosegan_fold{cfg.FOLD}_best.pt"
+    best_ckpt_path = cfg.CKPT_DIR / f"{cfg.RUN_NAME}_fold{cfg.FOLD}_best.pt"
     if best_ckpt_path.exists():
         wandb.save(str(best_ckpt_path), policy="now")
 
