@@ -53,7 +53,7 @@ class GANLoss(nn.Module):
 # ablation. Pair with the U-Net norm ablation in models/unet3d.py.
 class UnetGenerator3d(nn.Module):
     def __init__(self, input_nc, output_nc, ngf=32,
-                 norm_layer=nn.BatchNorm3d, use_dropout=False, gpu_ids=[]):  # TODO
+                 norm_layer=nn.BatchNorm3d, use_dropout=False, gpu_ids=[]):
         super(UnetGenerator3d, self).__init__()
         self.gpu_ids = gpu_ids
 
