@@ -26,6 +26,7 @@ outputs/evaluation/
 # Personal context files — ignore everything in docs/ except the tracker
 docs/*
 !docs/thesis_reporting_tracker.md
+!docs/literature_comparison.md
 CLAUDE.md
 
 # W&B
