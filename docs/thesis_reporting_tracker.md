@@ -16,6 +16,7 @@ Last updated: 2026-05-16
 - [x] Investigation 1 (acquisition group breakdown) — U-Net Sigmoid + DoseGAN Tanh
 - [x] Investigation 2 (worst-case patient visualisations) — U-Net Sigmoid + DoseGAN Tanh
 - [x] Investigation 3 (dose-smearing index) — code exists
+- [x] Literature comparison table finalised — full-text details extracted for all 11 papers; Kandalan 2021 and Lempart 2021 added to Zotero and notes completed
 
 ### Pending
 - [ ] DoseGAN Sigmoid 5-fold training (running, ETA ~24h)
