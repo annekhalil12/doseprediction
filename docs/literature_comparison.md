@@ -120,17 +120,22 @@ Both models were trained for a maximum of 100 epochs using the Adam optimiser (L
 - Also cites: Kandalan (PTV D95 0.4%, bladder Dmean 1.8%, 3D U-Net) and Lempart (PTV D95 1%, OARs 2.1%, 2.5D)
 
 ### Kandalan 2021 — PMC7908143
-- N=248 prostate VMAT/CT: 108 source + 14–29 per target planning style + 20 external
-- 3D U-Net, 85 layers, 7.87M params; MSE loss; Adam LR 1e-4
-- Focus: transfer learning across planning styles and institutions (14–29 cases sufficient to adapt)
-- Results: PTV Dmean/D2 within 1.6% Rx; OARs within 1.5% Rx; PTV D95 0.4% Rx; bladder Dmean 1.8%; gamma 3%/3mm >95%
+- N=248 prostate VMAT/CT: 108 source + 14–29 per target planning style + 20 external; split into source (standard plan) and target (alternative style) cohorts
+- 3D U-Net, 85 layers, 7,870,177 params; MSE loss; Adam LR 1e-4; no data augmentation reported
+- Input: PTV + OAR binary masks (no imaging); output: 3D dose volume
+- Focus: transfer learning across planning styles and institutions — as few as 14–29 target-style cases sufficient to adapt
+- Results (source-only model): PTV Dmean 1.0% Rx, D2 1.6% Rx; OAR Dmean ≤1.5% Rx; PTV D95 0.4% Rx; bladder Dmean 1.8% Rx
+- Gamma 3%/3mm >95% pass rate on pixels >10% prescribed dose
 - No epochs reported; no voxel MAE in Gy
 
 ### Lempart 2021 — PMC8353474
 - N=177 prostate VMAT/CT: 160 train + 17 test
-- 2.5D densely-connected U-Net on triplets of 3 axial slices + segmentation masks; MSE loss; Adam LR 1e-4
+- 2.5D densely-connected U-Net on triplets of 3 consecutive axial slices + segmentation masks; input 192×192×21; MSE loss; Adam LR 1e-4
 - 500 epochs; batch 16; 5-fold CV; augmentation: ±10% translation, horizontal flip, ±5° rotation
 - Results: CTV D100% 1.3% Rx; PTV D98% 1.9%; PTV D95% 1.0%; OARs ≤2.6% Rx
+- Gamma (global, 3%, 2 mm, 15% cutoff): 100% pass rate on phantom
+- Dose difference between deliverable plan and ground truth within 4.4% on clinical cases
+- Statistically significant improvement over 2D slice-based model for CTV D100%, PTV D98%, PTV D95%
 - All predictions successfully converted to deliverable treatment plans
 - No voxel MAE in Gy
 
