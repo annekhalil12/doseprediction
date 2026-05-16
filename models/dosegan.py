@@ -78,7 +78,7 @@ class UnetGenerator3d(nn.Module):
                                                norm_layer=norm_layer)
         self.outer_block = nn.Sequential(
             *[nn.Conv3d(ngf * 2, output_nc, kernel_size=4, stride=1, padding=3, dilation=2),
-              nn.Tanh()])
+              nn.Sigmoid()])
 
         self.model = unet_block
 

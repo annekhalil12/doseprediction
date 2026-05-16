@@ -17,4 +17,6 @@ mkdir -p outputs/logs
 export PYTHONPATH=/gpfs/scratch1/shared/akhalil/data/thesis-doseprediction
 
 FOLD=${FOLD:-0}
-python3 training/train_dosegan.py --fold $FOLD
+OVERWRITE_ARG=""
+if [ -n "${OVERWRITE:-}" ]; then OVERWRITE_ARG="--overwrite"; fi
+python3 training/train_dosegan.py --fold $FOLD $OVERWRITE_ARG

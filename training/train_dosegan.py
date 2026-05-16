@@ -145,9 +145,20 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--fold", type=int, default=None,
                         help="Override cfg.FOLD (0–4). If omitted, uses value in config_dosegan.py.")
+    parser.add_argument("--overwrite", action="store_true",
+                        help="Overwrite an existing best checkpoint instead of refusing to start.")
     args, _ = parser.parse_known_args()
     if args.fold is not None:
         cfg.FOLD = args.fold
+
+    cfg.CKPT_DIR.mkdir(parents=True, exist_ok=True)
+    ckpt_path = cfg.CKPT_DIR / f"{cfg.RUN_NAME}_fold{cfg.FOLD}_best.pt"
+    if ckpt_path.exists() and not args.overwrite:
+        raise FileExistsError(
+            f"Refusing to overwrite existing checkpoint: {ckpt_path}\n"
+            f"Pass --overwrite (or set OVERWRITE=1 for the sbatch) to replace it, "
+            f"or delete it first."
+        )
 
     # ── W&B initialisation ─────────────────────────────────────────────────
     # This creates a new run in your W&B project. Every hyperparameter is
@@ -171,8 +182,6 @@ def main():
             "early_stop_patience": cfg.EARLY_STOP_PATIENCE,
         }
     )
-
-    cfg.CKPT_DIR.mkdir(parents=True, exist_ok=True)
 
     # Seed before DataLoader creation so worker subprocesses inherit a
     # deterministic parent RNG; worker_init_fn below then offsets each
