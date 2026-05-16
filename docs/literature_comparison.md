@@ -143,3 +143,35 @@ Both models were trained for a maximum of 100 epochs using the Adam optimiser (L
 - N=125 abdominal (67% pancreas); MR-guided online-adaptive; 975 plans
 - Voxel dose error: mean 0.2 ± 3.0 Gy; absolute 3.0 ± 2.0 Gy; V95 precision ±6%
 - Relevant for Phase 2 (pancreatic MRgRT)
+
+---
+
+## References
+
+[1] Kearney, V., Chan, J. W., Wang, T., Perry, A., Descovich, M., Morin, O., Yom, S. S., & Solberg, T. D. (2020). DoseGAN: A generative adversarial network for synthetic dose prediction using attention-gated discrimination and generation. *Scientific Reports*, *10*(1), 11073. https://doi.org/10.1038/s41598-020-68062-7
+
+[2] Murakami, Y., Magome, T., Matsumoto, K., Sato, T., Yoshioka, Y., & Oguchi, M. (2020). Fully automated dose prediction using generative adversarial networks in prostate cancer patients. *PloS One*, *15*(5), e0232697. https://doi.org/10.1371/journal.pone.0232697
+
+[3] Jiao, Z., Peng, X., Wang, Y., Xiao, J., Nie, D., Wu, X., Wang, X., Zhou, J., & Shen, D. (2023). TransDose: Transformer-based radiotherapy dose prediction from CT images guided by super-pixel-level GCN classification. *Medical Image Analysis*, *89*, 102902. https://doi.org/10.1016/j.media.2023.102902
+
+[4] Gao, R., Lou, B., Xu, Z., Comaniciu, D., & Kamen, A. (2023). Flexible-Cm GAN: Towards precise 3D dose prediction in radiotherapy. *Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition*, 715–725. https://doi.org/10.1109/CVPR52729.2023.00076
+
+[5] Feng, Z., Wen, L., Xiao, J., Xu, Y., Wu, X., Zhou, J., Peng, X., & Wang, Y. (2024). Diffusion-based radiotherapy dose prediction guided by inter-slice aware structure encoding. *IEEE Transactions on Emerging Topics in Computational Intelligence*, *9*(2), 1119–1129. https://doi.org/10.1109/TETCI.2024.3436568
+
+[6] Dong, Z., Chen, Y., Gay, H., Hao, Y., Hugo, G. D., Samson, P., & Zhao, T. (2025). Large-language-model empowered 3D dose prediction for intensity-modulated radiotherapy. *Medical Physics*, *52*(1), 619–632. https://doi.org/10.1002/mp.17416
+
+[7] Fransson, S., Strand, R., & Tilly, D. (2024). Deep learning-based dose prediction for magnetic resonance-guided prostate radiotherapy. *Medical Physics*, *51*(11), 8087–8095. https://doi.org/10.1002/mp.17312
+
+[8] Thomas, M. A., Fu, Y., & Yang, D. (2020). Development and evaluation of machine learning models for voxel dose predictions in online adaptive magnetic resonance guided radiation therapy. *Journal of Applied Clinical Medical Physics*, *21*(7), 60–69. https://doi.org/10.1002/acm2.12884
+
+[9] Rogowski, V., Olsson, L. E., Scherman, J., Persson, E., Kadhim, M., Af Wetterstedt, S., Gunnlaugsson, A., Nilsson, M. P., Vass, N., Moreau, M., Gebre Medhin, M., Bäck, S., Munck Af Rosenschöld, P., Engelholm, S., & Jamtheim Gustafsson, C. (2025). LUND-PROBE – LUND prostate radiotherapy open benchmarking and evaluation dataset. *Scientific Data*, *12*(1), 611. https://doi.org/10.1038/s41597-025-04954-5
+
+[10] Kandalan, R. N., Nguyen, D., Rezaeian, N. H., Barragán-Montero, A. M., Breedveld, S., Namuduri, K., Jiang, S., & Lin, M. H. (2021). Dose prediction with deep learning for prostate cancer radiation therapy: Model adaptation to different treatment planning practices. *Radiotherapy and Oncology*, *153*, 228–235. https://doi.org/10.1016/j.radonc.2020.10.027
+
+[11] Lempart, M., Benedek, H., Jamtheim Gustafsson, C., Nilsson, M., Eliasson, N., Bäck, S., Munck Af Rosenschöld, P., & Olsson, L. E. (2021). Volumetric modulated arc therapy dose prediction and deliverable treatment plan generation for prostate cancer patients using a densely connected volumetric convolutional neural network. *Physics and Imaging in Radiation Oncology*, *19*, 112–119. https://doi.org/10.1016/j.phro.2021.07.008
+
+Dong, Z., Chen, Y., & Zhao, T. (2024). DoseGNN: Improving the performance of deep learning models in adaptive dose-volume histogram prediction through graph neural networks. *arXiv*. https://doi.org/10.48550/arXiv.2402.01076
+
+Isola, P., Zhu, J.-Y., Zhou, T., & Efros, A. A. (2017). Image-to-image translation with conditional adversarial networks. *Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition*, 1125–1134. https://doi.org/10.1109/CVPR.2017.632
+
+Kazemzadeh, A., Rasti, R., & Tavakoli, M. B. (2025). Artificial intelligence for radiotherapy dose prediction: A comprehensive review. *Cancer/Radiothérapie*, *29*(4), 104630. https://doi.org/10.1016/j.canrad.2025.104630
