@@ -23,8 +23,9 @@ outputs/visualisations/
 outputs/logs/
 outputs/evaluation/
 
-# Personal context files
-docs/
+# Personal context files — ignore everything in docs/ except the tracker
+docs/*
+!docs/thesis_reporting_tracker.md
 CLAUDE.md
 
 # W&B
