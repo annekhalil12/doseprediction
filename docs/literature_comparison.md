@@ -1,6 +1,6 @@
 # Literature Comparison — Full Text Analysis
 
-**Last updated:** 2026-05-16 (Opus agent full-text + Fransson 2024 full PDF)
+**Last updated:** 2026-05-16 (Opus agent full-text + Fransson 2024 full PDF + Kandalan & Lempart full PMC text)
 **Anne's results (LUND-PROBE, N=432, 5-fold CV, val set, body-mask-voxel-weighted):**
 - U-Net (Sigmoid): body_MAE = 0.861 ± 0.026 Gy, body_RMSE = 1.514 ± 0.038 Gy
 - DoseGAN (Tanh): body_MAE = 0.912 ± 0.065 Gy, body_RMSE = 1.582 ± 0.093 Gy
@@ -25,6 +25,8 @@
 | Flexible-Cᵐ GAN / Gao 2023 [4] | Lung / 360 / IMRT variable beams / CT | Conditional GAN + miss-consistency + shift-DVH loss | L.lung 4.6% Rx; R.lung 4.0% Rx (~3 Gy at 70 Gy Rx) | n/r | n/r | No — lung, metric is % of Rx |
 | LLM-DoseGNN / Dong 2025 [6] | Lung / 40 / IMRT / CBCT | Heterogeneous GNN + LLM prompt nodes | MSE 2.58 ± 0.93 (likely (% Rx)²) | n/r | Dmax err 2.93–3.81% Rx; Dmean err 2.15–4.04% Rx | No — lung, MSE not MAE, tiny N |
 | Thomas 2020 (MRgRT) [8] | Pancreas+liver / 125 / online-adaptive MRgRT / MRI | ANN voxel predictor | Mean err 0.2 ± 3.0; abs err 3.0 ± 2.0 | n/r | V95 precision ±6% | No (anatomy); relevant for Phase 2 thesis |
+| Kandalan 2021 [10] | Prostate / 248 total (108 source + 14–29 per target style + 20 external) / VMAT / CT | 3D U-Net (85 layers, 7.87M params), MSE loss, Adam LR 1e-4; transfer learning across planning styles | n/r in Gy | n/r | PTV Dmean/D2 err within **1.6%** Rx; OARs within **1.5%** Rx; PTV D95 **0.4%**, bladder Dmean **1.8%** (cited by Fransson); gamma 3%/3mm >95% | Indirect — prostate VMAT/CT, DVH-only; confirms D95/Dmean benchmark Fransson cited |
+| Lempart 2021 [11] | Prostate / 177 total (160 train + 17 test) / VMAT / CT | 2.5D densely-connected U-Net (triplets of 3 slices), MSE loss, Adam LR 1e-4, **500 epochs**, batch 16, 5-fold CV | CTV **1.3%**, PTV D98 **1.9%**, PTV D95 **1.0%**, OARs ≤**2.6%** (all % of prescription) | n/r | PTV and OAR DVH within 1–2.6% Rx; all plans converted to deliverable | Indirect — prostate VMAT/CT, metric in % Rx not Gy; **confirms 500-epoch norm for 2.5D** |
 | LUND-PROBE / Rogowski 2025 [9] | Prostate / 432 / MR-guided RT / MRI+sCT | Data descriptor — no DL model | n/a | n/a | n/a | This IS Anne's dataset |
 
 ---
@@ -70,6 +72,8 @@ Both models were trained for a maximum of 100 epochs using the Adam optimiser (L
 | Kazemzadeh 2025 (review) | Frame the field in introduction |
 | [3] | Jiao 2023 (TransDose) | Architecture comparator with per-structure Gy MAE values |
 | [8] | Thomas 2020 (MRgRT) | Bridges Phase 1 → Phase 2 (pancreatic MRgRT framing) |
+| [10] | Kandalan 2021 | Prostate 3D U-Net with DVH benchmark values (D95 0.4%, bladder Dmean 1.8%); transfer learning — relevant for Phase 2 |
+| [11] | Lempart 2021 | Prostate 2.5D model; confirms 500-epoch norm; deliverable plan workflow |
 
 ---
 
@@ -132,6 +136,34 @@ Both models were trained for a maximum of 100 epochs using the Adam optimiser (L
 - No voxel-wise MAE/RMSE in Gy reported
 - Also cites: Kandalan (PTV D95% err 0.4%, bladder Dmean err 1.8%, 3D U-Net); Lempart (2.5D, 1% / 2.1%)
 - **Most clinically aligned comparator to Anne** — same anatomy (prostate), same modality (MR-Linac), cohort from same Lund/Uppsala lineage; note: N=35 vs Anne's 432, hypofractionated vs standard fractionation, DVH-only metrics
+
+### Kandalan 2021 (PMC7908143)
+- Source: PMC open access (Radiotherapy and Oncology)
+- N=248 prostate VMAT/CT: 108 source institution + 20 external + 14–29 per target planning style (3 internal + 1 external)
+- Architecture: 3D U-Net, 85 layers, 7.87M parameters; MSE loss; Adam LR 1e-4
+- Focus: **transfer learning across planning styles** — source model adapts to new centre/style with only 14–29 cases
+- Key results (target model after transfer learning):
+  - PTV Dmean/D2 within **1.6%** Rx; OARs within **1.5%** Rx
+  - **PTV D95 difference: 0.4%** Rx; **bladder Dmean: 1.8%** (these are the numbers Fransson cites)
+  - DSC 0.81–0.94 (internal) / 0.82–0.91 (external) for dose prediction accuracy
+  - Gamma 3%/3mm >95% pass rate
+- No voxel MAE in Gy; no epochs reported explicitly
+- **Why cite:** prostate 3D U-Net with DVH benchmark values that Fransson directly compares against; also important for Phase 2 (transfer learning to pancreatic cohort)
+
+### Lempart 2021 (PMC8353474)
+- Source: PMC open access (Physics and Imaging in Radiation Oncology)
+- N=177 prostate VMAT/CT: 160 train + 17 test
+- Architecture: **2.5D densely-connected modified U-Net** trained on triplets (3 consecutive axial slices + segmentations); MSE loss; Adam LR 1e-4
+- Training: **500 epochs**, batch size 16, 5-fold CV; augmentation: ±10% translation, horizontal flip, ±5° rotation
+- Key results (test set, vs clinical ground truth):
+  - CTV D100%: mean absolute error **1.3%** Rx
+  - PTV D98%: **1.9%** Rx
+  - PTV D95%: **1.0%** Rx ← this is the 1% Fransson cites
+  - OARs: ≤**2.6%** Rx ← this is the 2.1% Fransson approximates
+  - All predicted distributions successfully converted to deliverable plans
+  - Significant improvement over pure 2D baseline for D100%, D98%, D95%
+- No voxel MAE in Gy
+- **Why cite:** prostate VMAT 2.5D model; **confirms 500-epoch norm** (same as Fransson) for this dataset size; DVH benchmark values Fransson directly references; also demonstrates plan deliverability which is clinically important
 
 ### Thomas 2020 (PMC7807572)
 - N=125 abdominal (67% pancreas); MR-guided online adaptive; 975 plans
