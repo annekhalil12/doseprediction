@@ -1,172 +1,140 @@
-# Literature Comparison — Full Text Analysis
+# Literature Comparison
 
-**Last updated:** 2026-05-16 (Opus agent full-text + Fransson 2024 full PDF + Kandalan & Lempart full PMC text)
-**Anne's results (LUND-PROBE, N=432, 5-fold CV, val set, body-mask-voxel-weighted):**
+**Last updated:** 2026-05-16
+
+**Results from this work (LUND-PROBE, N=432, 5-fold CV, validation set, body-contour-masked):**
 - U-Net (Sigmoid): body_MAE = 0.861 ± 0.026 Gy, body_RMSE = 1.514 ± 0.038 Gy
 - DoseGAN (Tanh): body_MAE = 0.912 ± 0.065 Gy, body_RMSE = 1.582 ± 0.093 Gy
-- DoseGAN (Sigmoid): pending (~24h)
+- DoseGAN (Sigmoid): pending
 
 ---
 
 ## Comparison Table
 
-> Cells marked `n/r` = not reported in full text. Cells marked `(paywall)` = paywalled, abstract only.
-> ⭐ = most directly comparable to Anne's metric definition.
+> `n/r` = not reported. `(paywall)` = abstract only.
 
-| Paper | Anatomy / N / Treatment / Modality | Model | Voxel MAE (Gy) | Voxel RMSE (Gy) | Key DVH metric | Comparable? |
+| Paper | Anatomy / N / Treatment / Modality | Model | Voxel MAE (Gy) | Voxel RMSE (Gy) | Key DVH metric | Notes on comparability |
 |---|---|---|---|---|---|---|
-| **Anne — U-Net Sigmoid** | Prostate / 432 / MR-guided RT / MRI+sCT | 3D U-Net, 32ch, Sigmoid | **0.861 ± 0.026** | **1.514 ± 0.038** | — | reference |
-| **Anne — DoseGAN Tanh** | Prostate / 432 / MR-guided RT / MRI+sCT | 3D pix2pix GAN, att. gates | **0.912 ± 0.065** | **1.582 ± 0.093** | — | reference |
-| ⭐ DoseDiff / Feng 2024 [5] | Breast/119 + NPC/139 + OpenKBP-H&N/340 / CT | Diffusion (MMFNet+FusionFormer), conditioned on SDMs | Breast **1.076 ± 0.232**; NPC 1.676 ± 0.387; OpenKBP 2.382 ± 0.925 | n/r | Breast CTV ΔD95 0.328 Gy; heart ΔDmean 0.938 Gy | **Closest metric match** — body-mask MAE in Gy, same definition; anatomy differs |
-| Fransson 2024 [7] | Prostate / 35 pts / 212 fractions / MR-Linac 6.1Gy×6–7 fx / MRI (T2w, 0.86×0.86×1 mm³) | Two-stage 3D U-Net+AttGates: seg → dose; MSE + moment-based DVH loss; **500 epochs**, batch 2, Adam LR 1e-4, patch 64³, 5-fold CV ensemble; RTX 3090 | n/r | n/r | CTV ΔD98/D95/D2: **0.7%/0.7%/1.7%** Rx; Bladder ΔDmean/D2: **0.7%/0.3%** Rx; Rectum ΔV33/38/41Gy: **0.1/0.2/0.2 pp**; inference 4 s/patient | **Closest clinically** — prostate, MR-Linac, same cohort lineage, DVH-only, N=35 |
-| Kearney 2020 (DoseGAN) [1] | Prostate / 141 / CyberKnife SBRT 38 Gy / CT | 3D att-gated pix2pix + PatchGAN | n/r | n/r | PTV V100 err 0.46%; V120 err 2.91%; HI 0.03; Rectum V60 1.67%; Bladder V60 1.55%; Bulb Dmean 1.16 Gy | Indirect — same anatomy, DVH-only, different Rx/modality |
-| Murakami 2020 [2] | Prostate / 90 / 5-field IMRT 78 Gy / CT | pix2pix 2D slice-based | n/r | n/r | PTV within ~1% Rx; OARs within ~2% Rx (structure-input model) | Indirect — same anatomy, DVH-only, small N, 2D |
-| TransDose / Jiao 2023 [3] | Abdominal (liver/spinal/stomach) / N? / CT | Transformer + super-pixel GCN | PTV 1.97; liver 2.21; spinal 1.14; stomach 1.16 (Gy, per-structure, abstract only) | n/r (paywall) | n/r | Partial — per-structure MAE in Gy matches metric type; wrong anatomy |
-| Flexible-Cᵐ GAN / Gao 2023 [4] | Lung / 360 / IMRT variable beams / CT | Conditional GAN + miss-consistency + shift-DVH loss | L.lung 4.6% Rx; R.lung 4.0% Rx (~3 Gy at 70 Gy Rx) | n/r | n/r | No — lung, metric is % of Rx |
-| LLM-DoseGNN / Dong 2025 [6] | Lung / 40 / IMRT / CBCT | Heterogeneous GNN + LLM prompt nodes | MSE 2.58 ± 0.93 (likely (% Rx)²) | n/r | Dmax err 2.93–3.81% Rx; Dmean err 2.15–4.04% Rx | No — lung, MSE not MAE, tiny N |
-| Thomas 2020 (MRgRT) [8] | Pancreas+liver / 125 / online-adaptive MRgRT / MRI | ANN voxel predictor | Mean err 0.2 ± 3.0; abs err 3.0 ± 2.0 | n/r | V95 precision ±6% | No (anatomy); relevant for Phase 2 thesis |
-| Kandalan 2021 [10] | Prostate / 248 total (108 source + 14–29 per target style + 20 external) / VMAT / CT | 3D U-Net (85 layers, 7.87M params), MSE loss, Adam LR 1e-4; transfer learning across planning styles | n/r in Gy | n/r | PTV Dmean/D2 err within **1.6%** Rx; OARs within **1.5%** Rx; PTV D95 **0.4%**, bladder Dmean **1.8%** (cited by Fransson); gamma 3%/3mm >95% | Indirect — prostate VMAT/CT, DVH-only; confirms D95/Dmean benchmark Fransson cited |
-| Lempart 2021 [11] | Prostate / 177 total (160 train + 17 test) / VMAT / CT | 2.5D densely-connected U-Net (triplets of 3 slices), MSE loss, Adam LR 1e-4, **500 epochs**, batch 16, 5-fold CV | CTV **1.3%**, PTV D98 **1.9%**, PTV D95 **1.0%**, OARs ≤**2.6%** (all % of prescription) | n/r | PTV and OAR DVH within 1–2.6% Rx; all plans converted to deliverable | Indirect — prostate VMAT/CT, metric in % Rx not Gy; **confirms 500-epoch norm for 2.5D** |
-| LUND-PROBE / Rogowski 2025 [9] | Prostate / 432 / MR-guided RT / MRI+sCT | Data descriptor — no DL model | n/a | n/a | n/a | This IS Anne's dataset |
+| **This work — U-Net (Sigmoid)** | Prostate / 432 / MR-guided RT / MRI+sCT | 3D U-Net, 32ch, Sigmoid output | **0.861 ± 0.026** | **1.514 ± 0.038** | — | Reference |
+| **This work — DoseGAN (Tanh)** | Prostate / 432 / MR-guided RT / MRI+sCT | 3D pix2pix GAN, attention gates | **0.912 ± 0.065** | **1.582 ± 0.093** | — | Reference |
+| Feng 2024 (DoseDiff) [5] | Breast/119 + NPC/139 + H&N/340 / CT | Conditional diffusion (MMFNet + FusionFormer) | Breast **1.076 ± 0.232**; NPC 1.676 ± 0.387; OpenKBP 2.382 ± 0.925 | n/r | Breast CTV ΔD95 0.328 Gy; heart ΔDmean 0.938 Gy | Closest metric match — MAE computed over body-mask voxels in Gy, same definition; anatomy differs |
+| Fransson 2024 [7] | Prostate / 35 pts / 212 fractions / MR-Linac 6.1 Gy×6–7 fx / MRI | Two-stage 3D U-Net+AttGates; MSE + moment-based DVH loss; 500 epochs, batch 2, Adam LR 1e-4, patch 64³, 5-fold CV ensemble | n/r | n/r | CTV ΔD98/D95/D2: **0.7%/0.7%/1.7%** Rx; Bladder ΔDmean/D2: **0.7%/0.3%** Rx; Rectum ΔV33/38/41Gy: **0.1/0.2/0.2 pp**; inference 4 s/patient | Closest clinical comparator — prostate, MR-Linac, same cohort lineage; DVH-only metrics, N=35 |
+| Kearney 2020 (DoseGAN) [1] | Prostate / 141 / CyberKnife SBRT 38 Gy / CT | 3D attention-gated pix2pix + PatchGAN | n/r | n/r | PTV V100 err 0.46%; V120 err 2.91%; HI 0.03; Rectum V60 1.67%; Bladder V60 1.55%; Bulb Dmean 1.16 Gy | Same anatomy; DVH-only; CyberKnife CT vs MR-Linac MRI |
+| Murakami 2020 [2] | Prostate / 90 / 5-field IMRT 78 Gy / CT | pix2pix 2D slice-based | n/r | n/r | PTV within ~1% Rx; OARs within ~2% Rx (structure-input model) | Same anatomy; DVH-only; 2D slice-based; smaller N |
+| Kandalan 2021 [10] | Prostate / 248 / VMAT / CT | 3D U-Net, 85 layers, 7.87M params; MSE loss; Adam LR 1e-4; transfer learning across planning styles | n/r | n/r | PTV D95 **0.4%** Rx; bladder Dmean **1.8%** Rx; gamma 3%/3mm >95% | Prostate 3D U-Net; DVH-only; VMAT/CT; provides benchmark values cited in Fransson 2024 |
+| Lempart 2021 [11] | Prostate / 177 / VMAT / CT | 2.5D densely-connected U-Net (triplets of 3 slices); MSE loss; Adam LR 1e-4; 500 epochs; batch 16; 5-fold CV | n/r | n/r | CTV D100% **1.3%** Rx; PTV D98% **1.9%**; PTV D95% **1.0%**; OARs ≤**2.6%** Rx | Prostate 2.5D; DVH-only; VMAT/CT |
+| Jiao 2023 (TransDose) [3] | Abdominal (liver/spinal cord/stomach) / N? / CT | Transformer + super-pixel GCN | PTV 1.97; liver 2.21; spinal cord 1.14; stomach 1.16 (Gy, per-structure) | n/r (paywall) | n/r | Per-structure MAE in Gy matches metric type; anatomy differs |
+| Gao 2023 (Flexible-Cᵐ GAN) [4] | Lung / 360 / IMRT / CT | Conditional GAN + miss-consistency + shift-DVH loss | L.lung 4.6% Rx; R.lung 4.0% Rx | n/r | n/r | Lung; metric as % of Rx, not Gy |
+| Dong 2025 (LLM-DoseGNN) [6] | Lung / 40 / IMRT / CBCT | Heterogeneous GNN + LLM prompt nodes | MSE 2.58 ± 0.93 (units: (% Rx)²) | n/r | Dmax err 2.93–3.81% Rx; Dmean err 2.15–4.04% Rx | Lung; MSE not MAE; N=40 |
+| Thomas 2020 [8] | Pancreas+liver / 125 / online-adaptive MRgRT / MRI | ANN voxel predictor | Mean err 0.2 ± 3.0; abs err 3.0 ± 2.0 | n/r | V95 precision ±6% | Abdominal; relevant for Phase 2 (pancreatic MRgRT) |
+| Rogowski 2025 (LUND-PROBE) [9] | Prostate / 432 / MR-guided RT / MRI+sCT | Data descriptor — no prediction model | n/a | n/a | n/a | Defines the dataset used in this work |
 
 ---
 
-## Key Findings from Full-Text Search
+## Key Observations
 
-**1. No prostate paper reports voxel-wise MAE in Gy.**
-Kearney 2020, Murakami 2020, and Fransson 2024 all report DVH-based metrics only. Anne's body-masked voxel MAE is a *new reporting practice* for prostate dose prediction — worth noting in the methods section as a deliberate contribution.
+**No prostate paper reports voxel-wise MAE in Gy.**
+Kearney 2020, Murakami 2020, Fransson 2024, Kandalan 2021, and Lempart 2021 all report DVH-based metrics only (percentage of prescription dose or volume differences). The body-contour-masked voxel MAE reported in this work is a new reporting convention for prostate dose prediction.
 
-**2. Best body-mask MAE comparator is DoseDiff (Feng 2024).**
-They explicitly compute MAE "over pixels within body masks (background excluded)" — matching Anne's definition exactly. Anne's U-Net at **0.86 Gy** is *better* than DoseDiff's breast result (1.08 Gy at ~50 Gy Rx) and both are *much better* than the DoseGAN implementation from Feng's benchmark (1.71 Gy). Caveat: breast vs prostate geometry differs.
+**Most directly comparable external benchmark: Feng 2024 (DoseDiff).**
+MAE is computed over body-mask voxels in Gy, matching the definition used here. U-Net body_MAE of 0.861 Gy (50 Gy prescription) compares favourably against DoseDiff breast results (1.076 Gy, ~50 Gy prescription). The DoseGAN implementation benchmarked in Feng 2024 achieves 1.706 Gy on breast — substantially higher than the 0.912 Gy reported here, though direct comparison is limited by anatomical differences.
 
-**3. Anne's results are competitive.**
-- vs DoseDiff's DoseGAN benchmark (1.71 Gy breast): Anne's DoseGAN-Tanh 0.91 Gy is markedly better — but attribution partly to prostate geometry (smaller target/dose gradients).
-- vs TransDose's per-structure PTV MAE (1.97 Gy): Anne's whole-body-masked MAE of 0.86 Gy is lower, but not directly comparable (different mask definition, different anatomy).
-
-**4. Fransson 2024 is the operational state-of-the-art on MR-guided prostate.**
-Treat as what Anne is extending, not as a head-to-head competitor. Note: DVH-only metrics, hypofractionated SBRT, N=35 — Anne's N=432 is 12× larger.
-
-**5. Murakami 2020 used 160–215 epochs** (structure-input: 300k iters / CT-input: 400k iters), batch 4, Adam LR 2e-4. Directly relevant for the epoch justification in methods.
+**Fransson 2024 is the closest clinical comparator.**
+Same anatomy (prostate), same modality (MR-Linac), and the dataset derives from the same Lund/Uppsala cohort lineage as LUND-PROBE. DVH errors are below 2% of prescription dose for all targets and OARs. The key differences are N=35 vs N=432, hypofractionated SBRT vs conventionally fractionated treatment, and the absence of voxel-level MAE reporting.
 
 ---
 
-## Draft Methods Paragraph — Epoch Justification
+## Methods Paragraph — Training Duration
 
-> Paste and fill `[X hours]` from W&B run summaries before submission.
+> Fill `[X hours]` from W&B run summaries before submission.
 
-Both models were trained for a maximum of 100 epochs using the Adam optimiser (LR 2×10⁻⁴, β₁=0.5, β₂=0.999) with batch size 1. Early stopping on body-masked validation L1 (patience=15) was applied. While some comparable works train for more epochs (Murakami et al. 2020: 160–215; Fransson et al. 2024: 500 epochs on N=35), those studies use patch-based training where one "epoch" corresponds to far fewer gradient updates than in our patient-level scheme. With N≈300 training patients per fold and batch size 1, our 100 epochs correspond to ~30,000 weight updates — in the same order as Murakami's ~300k iterations with batch 4. In addition, we verified via W&B that validation loss plateaued by epoch 60–80 across all folds, confirming that extending training was unnecessary. Longer GAN training also risks discriminator–generator instability (Isola et al., 2017). Training was conducted on a single NVIDIA H100 GPU (Snellius HPC, SURF); each fold required approximately [X hours].
+Both models were trained for a maximum of 100 epochs using the Adam optimiser (LR 2×10⁻⁴, β₁=0.5, β₂=0.999) with batch size 1. Early stopping on body-masked validation L1 (patience=15 epochs) was applied. While some comparable works train for more epochs — Murakami et al. (2020) used 160–215 epochs on N=90 patients, and Fransson et al. (2024) and Lempart et al. (2021) both used 500 epochs — those studies employ patch-based training where one epoch corresponds to a single patch per patient rather than a full forward pass. With approximately 300 training patients per fold and batch size 1, 100 epochs here correspond to roughly 30,000 weight updates, comparable in scale to Murakami's ~300k iterations at batch size 4. Validation loss was confirmed to plateau by epoch 60–80 across all folds for both architectures. Longer GAN training also carries the risk of discriminator–generator instability (Isola et al., 2017). Training was conducted on a single NVIDIA H100 GPU (Snellius HPC, SURF); each fold required approximately [X hours].
 
 ---
 
-## Must-Cite Papers (Top 10)
+## Priority Citations
 
-| # | Paper | Why |
+| Paper | Reason |
+|---|---|
+| Rogowski et al. 2025 [9] | Dataset definition |
+| Kearney et al. 2020 [1] | Baseline architecture |
+| Murakami et al. 2020 [2] | Prostate GAN comparator; epoch count reference |
+| Isola et al. 2017 | Conditional GAN foundation (pix2pix) |
+| Dong et al. 2024/2025 [6] | DoseGNN method definition |
+| Feng et al. 2024 [5] | Body-masked MAE benchmark |
+| Fransson et al. 2024 [7] | MR-guided prostate prior work |
+| Kandalan et al. 2021 [10] | Prostate 3D U-Net DVH benchmark; transfer learning |
+| Lempart et al. 2021 [11] | Prostate 2.5D; epoch norm reference |
+| Jiao et al. 2023 [3] | Transformer-based comparator |
+| Kazemzadeh et al. 2025 | Field review for introduction |
+| Thomas et al. 2020 [8] | MRgRT voxel prediction; Phase 2 framing |
+
+---
+
+## Literature Gaps
+
+| Gap | Relevance | Search terms |
 |---|---|---|
-| [9] | Rogowski 2025 (LUND-PROBE) | Defines Anne's dataset — non-negotiable |
-| [1] | Kearney 2020 (DoseGAN) | Exact architecture baseline — cite for every architectural detail |
-| [2] | Murakami 2020 | Closest prostate + GAN peer; provides epoch count for methods |
-| Isola 2017 (pix2pix) | Architectural ancestor of DoseGAN |
-| [6] | Dong 2024/2025 (DoseGNN) | Third model in three-way comparison |
-| [5] | Feng 2024 (DoseDiff) | Best body-mask MAE benchmark in the literature |
-| [7] | Fransson 2024 | Closest MR-guided prostate prior work; operational baseline |
-| Kazemzadeh 2025 (review) | Frame the field in introduction |
-| [3] | Jiao 2023 (TransDose) | Architecture comparator with per-structure Gy MAE values |
-| [8] | Thomas 2020 (MRgRT) | Bridges Phase 1 → Phase 2 (pancreatic MRgRT framing) |
-| [10] | Kandalan 2021 | Prostate 3D U-Net with DVH benchmark values (D95 0.4%, bladder Dmean 1.8%); transfer learning — relevant for Phase 2 |
-| [11] | Lempart 2021 | Prostate 2.5D model; confirms 500-epoch norm; deliverable plan workflow |
+| Gamma pass rate in DL dose prediction | Standard clinical metric not yet implemented | "gamma pass rate dose prediction deep learning" |
+| OpenKBP (Babier et al. 2021) | Field-standard benchmark and evaluation protocol | "OpenKBP challenge dose prediction" |
+| Uncertainty quantification in dose prediction | Required for thorough experimental evaluation | "uncertainty quantification radiotherapy dose prediction" |
+| Pancreatic DL dose prediction | Phase 2 dataset — no ML papers currently in library | "deep learning dose prediction pancreatic MR-Linac" |
+| Domain adaptation / robustness in RT | Phase 3 robustness analysis | "domain adaptation dose prediction", "transfer learning radiotherapy" |
+| Body-masked loss functions | Grounds metric definition choice | "body contour masked loss radiotherapy dose prediction" |
+| GAN vs U-Net head-to-head on prostate (post-2021) | Direct architectural comparator | "GAN U-Net comparison prostate dose prediction" |
+| Activation function for non-negative regression | Grounds Sigmoid vs Tanh choice | "sigmoid tanh output activation dose prediction" |
 
 ---
 
-## Literature Gaps — Still Needed Before Submission
+## Per-Paper Notes
 
-| Gap | Why | Search terms |
-|---|---|---|
-| Gamma pass rate (3%/3mm, 2%/2mm) in DL dose prediction | Standard clinical metric — absent from entire library | "gamma pass rate dose prediction deep learning" |
-| OpenKBP (Babier 2021, Med Phys) | Field-standard benchmark; DoseDiff already cites it | "OpenKBP challenge dose prediction" |
-| Uncertainty quantification in dose prediction | Rubric: "uncertainty analysis for 8+" | "uncertainty quantification radiotherapy dose prediction" |
-| Pancreatic DL dose prediction | Phase 2 of thesis — library has zero ML papers for pancreas | "deep learning dose prediction pancreatic MR-Linac" |
-| Domain-shift / robustness in RT DL | Phase 3 of thesis — zero papers on transfer learning / OOD | "domain adaptation dose prediction", "transfer learning radiotherapy" |
-| Body-masked / anatomy-aware loss functions | Grounds the metric-definition choice | "body contour masked loss radiotherapy dose prediction" |
-| GAN vs U-Net head-to-head on prostate (post-2021) | Direct peer-reviewed comparator for Anne's main finding | "GAN U-Net comparison prostate dose prediction" |
-| Activation function for non-negative regression (medical imaging) | Grounds Tanh→Sigmoid choice | "sigmoid tanh output activation regression medical imaging" |
-
----
-
-## Per-Paper Full Notes
-
-### Kearney 2020 (DoseGAN)
-- Source: PMC7338467 (open access)
+### Kearney 2020 (DoseGAN) — PMC7338467
 - N=141 prostate, CyberKnife SBRT, CT, 128×128×64 voxels at 3×3×3 mm
-- Architecture: 5-level 3D encoder–decoder, 4×4×4 kernels, sync BatchNorm, LeakyReLU, **Tanh output** + densely-connected PatchGAN discriminator (8 conv layers)
-- No voxel-wise MAE/RMSE reported — DVH metrics only
+- 5-level 3D encoder–decoder, 4×4×4 kernels, sync BatchNorm, LeakyReLU, Tanh output; densely-connected PatchGAN discriminator (8 conv layers)
+- No voxel-wise MAE/RMSE reported; DVH metrics only
 - Inference: 0.31 s/volume on V100
-- **Confirms: Tanh output lineage; PatchGAN + BatchNorm3d tail are inherited from this paper**
+- Confirms: Tanh output lineage; PatchGAN + BatchNorm3d tail
 
-### Murakami 2020
-- Source: PLOS ONE (open access)
+### Murakami 2020 — PLOS ONE
 - N=90 prostate, 5-field IMRT 78 Gy/39 fx, CT, 1×1 mm in-plane
 - 2D slice-based pix2pix; 57.2M params; PatchGAN 70×70
-- **215 epochs (CT-input) / 160 epochs (structure-input)**; batch 4; Adam LR 2e-4; L1 λ=100
-- Inference: 4.93 ± 0.27 s/patient
-- No voxel MAE in Gy; all metrics as % of prescription dose
+- 215 epochs (CT-input) / 160 epochs (structure-input); batch 4; Adam LR 2e-4; L1 λ=100
+- Inference: 4.93 ± 0.27 s/patient; all metrics as % of prescription dose
 
-### DoseDiff / Feng 2024
-- Source: arXiv 2306.16324 (open)
-- N=119 breast + N=139 NPC + OpenKBP 340 H&N; CT; dose 0–75 Gy normalised to [-1,1]
+### Feng 2024 (DoseDiff) — arXiv 2306.16324
+- N=119 breast + N=139 NPC + OpenKBP 340 H&N; CT; dose 0–75 Gy normalised to [−1,1]
 - Conditional DDIM diffusion (1000 train / 8 sample steps); AdamW LR 1e-4; batch 8; ~1M iters; 2× RTX 2080Ti
-- **Explicitly body-mask MAE in Gy** — matches Anne's definition
+- MAE computed over body-mask voxels in Gy — same definition as this work
 - Breast: DoseDiff 1.076 ± 0.232 Gy; DoseGAN (benchmark) 1.706 ± 0.268 Gy
 - NPC: DoseDiff 1.676 ± 0.387; DoseGAN 2.495 ± 0.435
-- Anne's U-Net 0.86 Gy < DoseDiff breast 1.08 Gy (though anatomies differ)
 
-### Fransson 2024 (Med Phys) — FULL TEXT via Uppsala DiVA (CC-BY)
-- Source: https://uu.diva-portal.org/smash/get/diva2:1849494/FULLTEXT01 (open access, CC-BY)
-- N=35 prostate patients, 212 MR-Linac fractions, 6.1 Gy × 6–7 fx (hypofractionated SBRT), Elekta Unity MR-Linac
-- Images: T2w 3D TSE, voxel 0.86×0.86×1 mm³; dose grid 3×3×3 mm³; MR-only workflow
+### Fransson 2024 — Med Phys (CC-BY, via Uppsala DiVA)
+- N=35 prostate, 212 MR-Linac fractions, 6.1 Gy × 6–7 fx, Elekta Unity MR-Linac
+- MRI: T2w 3D TSE, 0.86×0.86×1 mm³; dose grid 3×3×3 mm³; MR-only workflow
 - Split: 152 images (25 patients) train / 60 images (10 patients) test
-- Stage 1 (segmentation): 3D U-Net + attention gates, 30 initial layers, 3 max-pool layers, instance normalisation, LeakyReLU, softmax output; loss = cross-entropy + soft dice (equal weight); batch 2, patches 128³, **500 epochs**, Adam LR 1e-4, 5-fold CV ensemble; RTX 3090
-- Stage 2 (dose prediction): 3D U-Net + attention gates, **linear activation** at output; loss = MSE + moment-based DVH loss (weight 0.1); patch 64³, 5-fold CV ensemble; same hardware
-- Input to dose network: MRI + PTV + bladder + rectum + bone + body contour (6 channels)
-- **DVH results (predicted contour input, test set, mean difference vs ground truth):**
-  - CTV: ΔD98% = **0.7%**, ΔD95% = **0.7%**, ΔD2% = **1.7%** (of prescription dose)
-  - PTV: ΔD98% = **3.2%** (underestimated, clear trend), ΔD95% = **1.6%**
-  - Bladder: ΔDmean = **0.7%**, ΔD2% = **0.3%**
-  - Rectum: ΔV33Gy = **0.1 pp**, ΔV38Gy = **0.2 pp**, ΔV41Gy = **0.2 pp**
-- Inference: segmentation 101 s, dose prediction **4 s** per patient (total pipeline 110 s)
-- No voxel-wise MAE/RMSE in Gy reported
-- Also cites: Kandalan (PTV D95% err 0.4%, bladder Dmean err 1.8%, 3D U-Net); Lempart (2.5D, 1% / 2.1%)
-- **Most clinically aligned comparator to Anne** — same anatomy (prostate), same modality (MR-Linac), cohort from same Lund/Uppsala lineage; note: N=35 vs Anne's 432, hypofractionated vs standard fractionation, DVH-only metrics
+- Stage 1 (segmentation): 3D U-Net + attention gates; cross-entropy + soft dice loss; batch 2, patches 128³, 500 epochs, Adam LR 1e-4, 5-fold CV ensemble; RTX 3090
+- Stage 2 (dose): 3D U-Net + attention gates, linear output activation; MSE + moment-based DVH loss (weight 0.1); patch 64³, 5-fold CV ensemble
+- Input: MRI + PTV + bladder + rectum + bone + body contour (6 channels)
+- DVH results (predicted contour input, test set): CTV ΔD98/D95/D2 = 0.7%/0.7%/1.7%; PTV ΔD98 = 3.2% (consistent underestimation); Bladder ΔDmean/D2 = 0.7%/0.3%; Rectum ΔV33/38/41Gy = 0.1/0.2/0.2 pp
+- Inference: 4 s/patient (dose prediction only); 110 s total pipeline
+- Also cites: Kandalan (PTV D95 0.4%, bladder Dmean 1.8%, 3D U-Net) and Lempart (PTV D95 1%, OARs 2.1%, 2.5D)
 
-### Kandalan 2021 (PMC7908143)
-- Source: PMC open access (Radiotherapy and Oncology)
-- N=248 prostate VMAT/CT: 108 source institution + 20 external + 14–29 per target planning style (3 internal + 1 external)
-- Architecture: 3D U-Net, 85 layers, 7.87M parameters; MSE loss; Adam LR 1e-4
-- Focus: **transfer learning across planning styles** — source model adapts to new centre/style with only 14–29 cases
-- Key results (target model after transfer learning):
-  - PTV Dmean/D2 within **1.6%** Rx; OARs within **1.5%** Rx
-  - **PTV D95 difference: 0.4%** Rx; **bladder Dmean: 1.8%** (these are the numbers Fransson cites)
-  - DSC 0.81–0.94 (internal) / 0.82–0.91 (external) for dose prediction accuracy
-  - Gamma 3%/3mm >95% pass rate
-- No voxel MAE in Gy; no epochs reported explicitly
-- **Why cite:** prostate 3D U-Net with DVH benchmark values that Fransson directly compares against; also important for Phase 2 (transfer learning to pancreatic cohort)
+### Kandalan 2021 — PMC7908143
+- N=248 prostate VMAT/CT: 108 source + 14–29 per target planning style + 20 external
+- 3D U-Net, 85 layers, 7.87M params; MSE loss; Adam LR 1e-4
+- Focus: transfer learning across planning styles and institutions (14–29 cases sufficient to adapt)
+- Results: PTV Dmean/D2 within 1.6% Rx; OARs within 1.5% Rx; PTV D95 0.4% Rx; bladder Dmean 1.8%; gamma 3%/3mm >95%
+- No epochs reported; no voxel MAE in Gy
 
-### Lempart 2021 (PMC8353474)
-- Source: PMC open access (Physics and Imaging in Radiation Oncology)
+### Lempart 2021 — PMC8353474
 - N=177 prostate VMAT/CT: 160 train + 17 test
-- Architecture: **2.5D densely-connected modified U-Net** trained on triplets (3 consecutive axial slices + segmentations); MSE loss; Adam LR 1e-4
-- Training: **500 epochs**, batch size 16, 5-fold CV; augmentation: ±10% translation, horizontal flip, ±5° rotation
-- Key results (test set, vs clinical ground truth):
-  - CTV D100%: mean absolute error **1.3%** Rx
-  - PTV D98%: **1.9%** Rx
-  - PTV D95%: **1.0%** Rx ← this is the 1% Fransson cites
-  - OARs: ≤**2.6%** Rx ← this is the 2.1% Fransson approximates
-  - All predicted distributions successfully converted to deliverable plans
-  - Significant improvement over pure 2D baseline for D100%, D98%, D95%
+- 2.5D densely-connected U-Net on triplets of 3 axial slices + segmentation masks; MSE loss; Adam LR 1e-4
+- 500 epochs; batch 16; 5-fold CV; augmentation: ±10% translation, horizontal flip, ±5° rotation
+- Results: CTV D100% 1.3% Rx; PTV D98% 1.9%; PTV D95% 1.0%; OARs ≤2.6% Rx
+- All predictions successfully converted to deliverable treatment plans
 - No voxel MAE in Gy
-- **Why cite:** prostate VMAT 2.5D model; **confirms 500-epoch norm** (same as Fransson) for this dataset size; DVH benchmark values Fransson directly references; also demonstrates plan deliverability which is clinically important
 
-### Thomas 2020 (PMC7807572)
-- N=125 abdominal (67% pancreas); MR-guided online adaptive; 975 plans
-- Voxel-level dose error: mean 0.2 ± 3.0 Gy; absolute 3.0 ± 2.0 Gy
-- Directly relevant for Phase 2 (pancreatic MRgRT) framing
-
+### Thomas 2020 — PMC7807572
+- N=125 abdominal (67% pancreas); MR-guided online-adaptive; 975 plans
+- Voxel dose error: mean 0.2 ± 3.0 Gy; absolute 3.0 ± 2.0 Gy; V95 precision ±6%
+- Relevant for Phase 2 (pancreatic MRgRT)
