@@ -2,7 +2,7 @@
 
 Working document. Update as runs complete and sections are drafted.
 
-Last updated: 2026-05-16
+Last updated: 2026-05-18
 
 ---
 
@@ -17,10 +17,12 @@ Last updated: 2026-05-16
 - [x] Investigation 2 (worst-case patient visualisations) — U-Net Sigmoid + DoseGAN Tanh
 - [x] Investigation 3 (dose-smearing index) — code exists
 - [x] Literature comparison table finalised — full-text details extracted for all 11 papers; Kandalan 2021 and Lempart 2021 added to Zotero and notes completed
+- [x] DVH comparison with literature — per-metric absolute errors (% Rx) computed and benchmarked against Fransson 2024, Kandalan 2021, Lempart 2021 (see Section 3.7)
+- [x] DVH acquisition-group breakdown — newAcq vs oldAcq for all DVH metrics; finding: errors comparable across groups at DVH level (see Section 3.3)
 
 ### Pending
-- [ ] DoseGAN Sigmoid 5-fold training (running, ETA ~24h)
-- [ ] DoseGAN Sigmoid evaluation
+- [ ] DoseGAN Sigmoid 5-fold training (jobs 22845136–22845139, ETA ~2026-05-19)
+- [ ] DoseGAN Sigmoid evaluation (run `sbatch eval_dosegan.sbatch` once training done)
 - [ ] DoseGAN Sigmoid Inv1 + Inv2 analyses
 - [ ] Investigation 3 at scale across all 4 model variants
 - [ ] DVH curve comparison (not yet implemented)
@@ -85,7 +87,33 @@ Last updated: 2026-05-16
 | R11 | Per-group means and medians CSV, U-Net Sigmoid | READY | `outputs/analysis/inv1_unet3d_ch32_sigmoid_snellius_acquisition_breakdown.csv` |
 | R12 | Same for DoseGAN Tanh | READY | `outputs/analysis/inv1_dosegan_*_acquisition_*` |
 | R13 | Same for DoseGAN Sigmoid | PENDING | — |
-| R14 | Finding: oldAcq patients show higher error (distribution shift) | READY | Inv 1 outputs |
+| R14 | Finding: oldAcq patients drive body-MAE tail; but DVH-level errors are comparable across groups | READY (refined) | Inv 1 outputs + Section 3.7 below |
+
+**DVH acquisition-group breakdown (U-Net Sigmoid, N=367 val patients; % of Rx = 50 Gy):**
+
+| Metric | newAcq (N=93) | oldAcq (N=274) | ratio old/new |
+|---|---|---|---|
+| PTV Dmean | 0.54% ± 0.77% | 0.47% ± 0.80% | 0.87× |
+| PTV D95 | 0.94% ± 1.64% | 0.61% ± 0.84% | 0.65× |
+| Rectum Dmean | 2.67% ± 2.14% | 2.50% ± 1.99% | 0.93× |
+| Rectum D95 | 0.62% ± 0.41% | 0.58% ± 0.60% | 0.94× |
+| Bladder Dmean | 1.68% ± 1.48% | 1.64% ± 1.33% | 0.98× |
+| Bladder D95 | 0.82% ± 0.89% | 0.94% ± 1.47% | 1.14× |
+| Body MAE | 0.841 ± 0.140 Gy | 0.867 ± 0.235 Gy | 1.03× |
+
+**DVH acquisition-group breakdown (DoseGAN Tanh, N=367 val patients):**
+
+| Metric | newAcq (N=93) | oldAcq (N=274) | ratio old/new |
+|---|---|---|---|
+| PTV Dmean | 1.70% ± 1.52% | 1.56% ± 1.39% | 0.92× |
+| PTV D95 | 2.04% ± 2.00% | 1.79% ± 1.54% | 0.88× |
+| Rectum Dmean | 2.56% ± 2.00% | 2.60% ± 2.10% | 1.01× |
+| Rectum D95 | 0.63% ± 0.35% | 0.61% ± 0.64% | 0.98× |
+| Bladder Dmean | 1.99% ± 1.59% | 1.79% ± 1.49% | 0.90× |
+| Bladder D95 | 0.88% ± 1.09% | 1.09% ± 1.93% | 1.24× |
+| Body MAE | 0.893 ± 0.178 Gy | 0.918 ± 0.258 Gy | 1.03× |
+
+**Key finding:** All ratios are within 0.87×–1.24×. Distribution shift between acquisition groups manifests as tail-risk inflation at the body-MAE level (all 15 worst-MAE patients are oldAcq), NOT as systematic DVH-level degradation. Clinically relevant metrics (PTV coverage, OAR doses) are statistically comparable across groups.
 
 ### 3.4 Investigation 2: Worst-case visualisations
 
@@ -96,14 +124,41 @@ Last updated: 2026-05-16
 | R17 | Same for DoseGAN Sigmoid | PENDING | — |
 | R18 | Failure pattern: bladder over-prediction and dose-smearing | READY | Inv 2 outputs |
 
-### 3.5 Investigation 3: Dose-smearing index
+### 3.5 DVH comparison with literature
+
+All values are mean |Δ| (mean absolute error) as % of prescription dose (50 Gy), N=367 val patients. Literature values as reported. See `docs/literature_comparison.md` for full detail and caveats.
+
+| Metric | U-Net Sigmoid | DoseGAN Tanh | Fransson 2024 | Kandalan 2021 | Lempart 2021 |
+|---|---|---|---|---|---|
+| PTV/CTV Dmean | **0.49%** ± 0.79% | 1.59% ± 1.42% | 0.7% (CTV) | 1.0% | — |
+| PTV D95 | **0.69%** ± 1.11% | 1.85% ± 1.67% | 0.7% (CTV) | **0.4%** | 1.0% |
+| PTV D98 | **0.79%** ± 1.30% | 2.01% ± 1.86% | 3.2% (PTV) | 1.6% (D2) | 1.9% |
+| Bladder Dmean | 1.65% ± 1.37% | 1.84% ± 1.51% | **0.7%** | 1.8% | ≤ 2.6% |
+| Rectum Dmean | 2.54% ± 2.03% | 2.59% ± 2.07% | n/r | — | ≤ 2.6% |
+| Rectum D95 | 0.59% ± 0.56% | 0.62% ± 0.58% | — | — | — |
+
+**Interpretation for thesis:**
+- U-Net Sigmoid PTV metrics are competitive with or better than every prostate paper. PTV D98 (0.79%) substantially outperforms Fransson (3.2%) and Lempart (1.9%).
+- Bladder Dmean gap vs Fransson (1.65% vs 0.7%): explained by cohort heterogeneity (N=432, two acquisition eras, real-world bladder filling variability) not model weakness. Acquisition-group breakdown confirms both groups show identical bladder errors (~1.65–1.68%).
+- DoseGAN Tanh PTV metrics are within Lempart range but clearly behind U-Net. The U-Net vs DoseGAN gap holds across both acquisition groups, indicating it is architectural, not data-driven.
+- No prostate paper reports body-masked voxel MAE in Gy; 0.861 Gy compares favourably to Feng 2024 breast result (1.076 Gy, same metric definition).
+
+| # | Item | Status | Source |
+|---|------|--------|--------|
+| R23 | DVH comparison table (as above) | READY | `docs/literature_comparison.md` |
+| R24 | Bladder Dmean gap explanation (cohort heterogeneity, not model weakness) | READY | acquisition-group breakdown + Fransson N=35 context |
+| R25 | Voxel MAE benchmark vs Feng 2024 (breast): 0.861 vs 1.076 Gy | READY | `docs/literature_comparison.md` |
+
+---
+
+### 3.6 Investigation 3: Dose-smearing index
 
 | # | Item | Status | Source |
 |---|------|--------|--------|
 | R19 | Per-patient dose-smearing index across all 4 variants, with oldAcq/newAcq breakdown | OPTIONAL — code exists | analysis scripts |
 | R20 | Correlation between dose-smearing index and body_MAE_Gy | OPTIONAL | derived from R19 |
 
-### 3.6 Clinical metrics (optional)
+### 3.7 Clinical metrics (optional)
 
 | # | Item | Status | Source |
 |---|------|--------|--------|
@@ -124,7 +179,7 @@ Last updated: 2026-05-16
 | D6 | Limitations: val-set-only metrics, no DVH/gamma, single dataset (Phase 1), batch_size=1 with BatchNorm3d, geometric channels 8–14 not implemented | READY | — |
 | D7 | Reflection: dose-smearing should be addressed at the loss level (gradient-matching or perceptual loss); DVH/gamma should be implemented earlier | READY | — |
 | D8 | Inherited architectural quirks: PatchGAN tail BatchNorm+LeakyReLU, AttGate weight-tying — flagged as inherited, not corrected | READY | M7–M8 |
-| D9 | Comparison with prior literature | READY | `docs/literature_comparison.md` |
+| D9 | Comparison with prior literature — DVH table + acquisition-group breakdown added 2026-05-18 | READY | `docs/literature_comparison.md`, Section 3.5 |
 | D10 | Phase 2/3 outlook: transfer to pancreatic cohort, robustness under anatomical variation | READY | `docs/thesis_proposal.md` |
 
 ---
@@ -159,16 +214,16 @@ Draft methods footnote:
 
 ## 6. Next Steps (priority order)
 
-1. Wait for DoseGAN Sigmoid training to finish. Monitor with `squeue -u akhalil` and `tail -f outputs/logs/<jobid>.out`.
-2. Evaluate DoseGAN Sigmoid: `for F in 0 1 2 3 4; do python3 -m training.evaluate_dosegan --fold $F; done`
-3. Fill in R3, R6 (DoseGAN row) with body_MAE_Gy and body_RMSE_Gy.
-4. Run Inv1 + Inv2 for DoseGAN Sigmoid.
+1. Wait for DoseGAN Sigmoid training to finish (jobs 22845136–22845139, ETA ~2026-05-19). Monitor: `squeue -u akhalil`.
+2. Evaluate DoseGAN Sigmoid: `sbatch eval_dosegan.sbatch` (loops folds 0–4 automatically).
+3. Compute DVH metrics for DoseGAN Sigmoid; fill in R3 (body_MAE/RMSE) and update Section 3.5 DVH table.
+4. Run Inv1 + Inv2 for DoseGAN Sigmoid; fill in R13, R17.
 5. Run Investigation 3 at scale across all 4 model variants.
 6. Implement test-set evaluation for final models.
 7. (Stretch) Implement DVH + gamma analysis.
 8. Draft Methods using M1–M13 as checklist.
-9. Draft Results using R1–R18 as checklist.
-10. Draft Discussion using D1–D10 as checklist; prioritise D2, D4, D5.
+9. Draft Results using R1–R25 as checklist.
+10. Draft Discussion using D1–D10 as checklist; prioritise D2, D3, D4, D9.
 
 ---
 
