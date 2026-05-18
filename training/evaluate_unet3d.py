@@ -94,14 +94,16 @@ def evaluate(fold: int, split: str) -> None:
             true_gy = real_dose[0, 0].cpu().numpy() * DOSE_SCALE
             body    = real_input[0, 7].cpu().numpy()
 
-            ptv_mask     = batch["ptv_mask"][0, 0].numpy()
-            rectum_mask  = batch["rectum_mask"][0, 0].numpy()
-            bladder_mask = batch["bladder_mask"][0, 0].numpy()
+            ptv_mask         = batch["ptv_mask"][0, 0].numpy()
+            rectum_mask      = batch["rectum_mask"][0, 0].numpy()
+            bladder_mask     = batch["bladder_mask"][0, 0].numpy()
+            penile_bulb_mask = real_input[0, 6].cpu().numpy()   # channel 6 = PenileBulb
 
             mae, rmse = body_mae_rmse(pred_gy, true_gy, body)
-            ptv_dvh     = dvh_metrics(pred_gy, true_gy, ptv_mask)
-            rectum_dvh  = dvh_metrics(pred_gy, true_gy, rectum_mask)
-            bladder_dvh = dvh_metrics(pred_gy, true_gy, bladder_mask)
+            ptv_dvh         = dvh_metrics(pred_gy, true_gy, ptv_mask)
+            rectum_dvh      = dvh_metrics(pred_gy, true_gy, rectum_mask)
+            bladder_dvh     = dvh_metrics(pred_gy, true_gy, bladder_mask)
+            penile_bulb_dvh = dvh_metrics(pred_gy, true_gy, penile_bulb_mask)
 
             row = {
                 "patient_id":        patient_id,
@@ -110,9 +112,10 @@ def evaluate(fold: int, split: str) -> None:
                 "fold":              fold,
                 "body_MAE_Gy":       mae,
                 "body_RMSE_Gy":      rmse,
-                **{f"ptv_{k}":     v for k, v in ptv_dvh.items()},
-                **{f"rectum_{k}":  v for k, v in rectum_dvh.items()},
-                **{f"bladder_{k}": v for k, v in bladder_dvh.items()},
+                **{f"ptv_{k}":          v for k, v in ptv_dvh.items()},
+                **{f"rectum_{k}":       v for k, v in rectum_dvh.items()},
+                **{f"bladder_{k}":      v for k, v in bladder_dvh.items()},
+                **{f"penile_bulb_{k}":  v for k, v in penile_bulb_dvh.items()},
             }
             rows.append(row)
 

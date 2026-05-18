@@ -41,5 +41,6 @@ BETA2  = 0.999        # Adam beta2
 
 # ── Loss weights ───────────────────────────────────────────────────────────
 LAMBDA_VOXEL        = 100  # weight of L1 voxel loss relative to adversarial loss
-EARLY_STOP_PATIENCE = 15   # stop if val_L1 does not improve for this many epochs
+LAMBDA_DVH          = 5.0  # weight for structure-Dmean DVH regularisation loss
+EARLY_STOP_PATIENCE = 15   # stop if val_dvh_score does not improve for this many epochs
 USE_LSGAN    = True   # True = LSGAN (MSE), False = vanilla GAN (BCE)

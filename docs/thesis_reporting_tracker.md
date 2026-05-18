@@ -19,6 +19,9 @@ Last updated: 2026-05-18
 - [x] Literature comparison table finalised — full-text details extracted for all 11 papers; Kandalan 2021 and Lempart 2021 added to Zotero and notes completed
 - [x] DVH comparison with literature — per-metric absolute errors (% Rx) computed and benchmarked against Fransson 2024, Kandalan 2021, Lempart 2021 (see Section 3.7)
 - [x] DVH acquisition-group breakdown — newAcq vs oldAcq for all DVH metrics; finding: errors comparable across groups at DVH level (see Section 3.3)
+- [x] Penile Bulb evaluation added to both eval scripts (extracted from input channel 6; NaN for ~48 absent patients — handled automatically by dvh_metrics)
+- [x] DVH regularisation loss implemented in both training scripts — `structure_dmean_loss(PTV + Bladder + Rectum)`, weighted by LAMBDA_DVH (5.0 for DoseGAN, 0.1 for U-Net)
+- [x] DVH early stopping implemented in both training scripts — monitors `val_dvh_score = mean|Δ PTV D95| + mean|Δ Bladder Dmean| + mean|Δ Rectum Dmean|` in Gy instead of body-masked L1
 
 ### Pending
 - [ ] DoseGAN Sigmoid 5-fold training (jobs 22845136–22845139, ETA ~2026-05-19)
@@ -55,6 +58,9 @@ Last updated: 2026-05-18
 | M13 | Hardware and runtime: Snellius HPC, NVIDIA H100, wallclock per fold | READY | `outputs/logs/` |
 | M14 | DVH and gamma analysis | OPTIONAL / PENDING | Not yet implemented |
 | M15 | Investigation 3 metric: ratio of predicted to ground-truth dose gradient magnitude per patient | OPTIONAL | code exists, not yet run at scale |
+| M16 | DVH regularisation loss: `structure_dmean_loss(PTV) + structure_dmean_loss(Bladder) + structure_dmean_loss(Rectum)`, weighted λ_dvh (5.0 DoseGAN, 0.1 U-Net) — added to generator loss; from Kearney et al. 2020 | IMPLEMENTED — applies to next re-train | `training/train_dosegan.py`, `training/train_unet3d.py` |
+| M17 | DVH early stopping: model saved when `val_dvh_score = mean|Δ PTV D95| + mean|Δ Bladder Dmean| + mean|Δ Rectum Dmean|` (Gy) improves, not when body-masked L1 improves | IMPLEMENTED — applies to next re-train | `training/train_dosegan.py`, `training/train_unet3d.py` |
+| M18 | Penile Bulb evaluation: Dmean, Dmax, D95, D98, V20, V40 added to per-patient eval CSV; extracted from input channel 6; NaN for ~48 absent patients | IMPLEMENTED — applies on next evaluation run | `training/evaluate_dosegan.py`, `training/evaluate_unet3d.py` |
 
 ---
 
@@ -177,7 +183,7 @@ All values are mean |Δ| (mean absolute error) as % of prescription dose (50 Gy)
 | D4 | Failure modes: bladder over-prediction and dose-smearing; activation choice does not resolve these | READY | R15–R18 |
 | D5 | Dose-smearing index: if R19 is run, provides a quantitative characterisation of the dominant failure mode | OPTIONAL | R19–R20 |
 | D6 | Limitations: val-set-only metrics, no DVH/gamma, single dataset (Phase 1), batch_size=1 with BatchNorm3d, geometric channels 8–14 not implemented | READY | — |
-| D7 | Reflection: dose-smearing should be addressed at the loss level (gradient-matching or perceptual loss); DVH/gamma should be implemented earlier | READY | — |
+| D7 | Reflection: dose-smearing should be addressed at the loss level; DVH regularisation loss now implemented (M16); γ-pass-rate loss remains future work | READY | M16 |
 | D8 | Inherited architectural quirks: PatchGAN tail BatchNorm+LeakyReLU, AttGate weight-tying — flagged as inherited, not corrected | READY | M7–M8 |
 | D9 | Comparison with prior literature — DVH table + acquisition-group breakdown added 2026-05-18 | READY | `docs/literature_comparison.md`, Section 3.5 |
 | D10 | Phase 2/3 outlook: transfer to pancreatic cohort, robustness under anatomical variation | READY | `docs/thesis_proposal.md` |
@@ -215,15 +221,16 @@ Draft methods footnote:
 ## 6. Next Steps (priority order)
 
 1. Wait for DoseGAN Sigmoid training to finish (jobs 22845136–22845139, ETA ~2026-05-19). Monitor: `squeue -u akhalil`.
-2. Evaluate DoseGAN Sigmoid: `sbatch eval_dosegan.sbatch` (loops folds 0–4 automatically).
+2. Evaluate DoseGAN Sigmoid: `sbatch eval_dosegan.sbatch` (loops folds 0–4). Penile Bulb metrics now included automatically.
 3. Compute DVH metrics for DoseGAN Sigmoid; fill in R3 (body_MAE/RMSE) and update Section 3.5 DVH table.
 4. Run Inv1 + Inv2 for DoseGAN Sigmoid; fill in R13, R17.
 5. Run Investigation 3 at scale across all 4 model variants.
 6. Implement test-set evaluation for final models.
-7. (Stretch) Implement DVH + gamma analysis.
-8. Draft Methods using M1–M13 as checklist.
-9. Draft Results using R1–R25 as checklist.
-10. Draft Discussion using D1–D10 as checklist; prioritise D2, D3, D4, D9.
+7. (Optional) Re-train with DVH loss + DVH early stopping (M16–M17) to quantify improvement. Compare new val_dvh_score vs baseline. Note: currently running DoseGAN Sigmoid jobs (22845136–22845139) use the old loss — these are still valid as a baseline.
+8. (Stretch) Implement full DVH curves and gamma pass rate.
+9. Draft Methods using M1–M18 as checklist.
+10. Draft Results using R1–R25 as checklist.
+11. Draft Discussion using D1–D10 as checklist; prioritise D2, D3, D4, D9.
 
 ---
 

@@ -36,4 +36,5 @@ BETA1 = 0.9           # standard Adam beta1 for supervised training
 BETA2 = 0.999
 
 # ── Loss ───────────────────────────────────────────────────────────────────
-EARLY_STOP_PATIENCE = 15
+LAMBDA_DVH          = 0.1  # weight for structure-Dmean DVH regularisation loss
+EARLY_STOP_PATIENCE = 15   # stop if val_dvh_score does not improve for this many epochs

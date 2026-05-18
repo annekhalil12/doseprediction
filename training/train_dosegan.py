@@ -6,6 +6,7 @@
 import argparse
 import sys
 from tqdm import tqdm
+import numpy as np
 import torch
 from torch.utils.data import DataLoader
 from pathlib import Path
@@ -26,6 +27,21 @@ def masked_l1(pred: torch.Tensor, target: torch.Tensor, mask: torch.Tensor) -> t
     return (torch.abs(pred - target) * mask).sum() / mask.sum().clamp(min=1)
 
 
+def structure_dmean_loss(
+    pred: torch.Tensor,
+    target: torch.Tensor,
+    mask: torch.Tensor,
+) -> torch.Tensor:
+    """MAE of mean dose inside a structure. Safe for absent structures (contributes 0)."""
+    m = (mask > 0.5).float()
+    n = m.sum(dim=(2, 3, 4), keepdim=True).clamp(min=1)
+    pred_mean   = (pred * m).sum(dim=(2, 3, 4), keepdim=True) / n
+    target_mean = (target * m).sum(dim=(2, 3, 4), keepdim=True) / n
+    absent = (mask > 0.5).float().sum(dim=(2, 3, 4)) == 0   # (B,) bool
+    loss = torch.abs(pred_mean - target_mean).squeeze()
+    return loss[~absent].mean() if (~absent).any() else pred.sum() * 0.0
+
+
 def train_one_epoch(
     generator:     UnetGenerator3d,
     discriminator: NLayerDiscriminator,
@@ -34,6 +50,7 @@ def train_one_epoch(
     optimizer_D:   torch.optim.Optimizer,
     criterion_GAN: GANLoss,
     lambda_voxel:  float,
+    lambda_dvh:    float,
     device:        torch.device,
 ) -> dict:
     """
@@ -44,30 +61,27 @@ def train_one_epoch(
     generator.train()
     discriminator.train()
 
-    total_loss_D  = 0.0
-    total_loss_G  = 0.0
-    total_loss_L1 = 0.0
+    total_loss_D   = 0.0
+    total_loss_G   = 0.0
+    total_loss_L1  = 0.0
+    total_loss_dvh = 0.0
 
     for batch in tqdm(dataloader, desc="Training", leave=False):
-        real_input = batch["input"].to(device)   # (B, 9, D, H, W)  — sCT + structure masks
-        real_dose  = batch["dose"].to(device)    # (B, 1, D, H, W)  — ground-truth dose
-        body_mask  = real_input[:, 7:8]          # (B, 1, D, H, W)  — BODY contour, binary
+        real_input   = batch["input"].to(device)         # (B, 9, D, H, W)
+        real_dose    = batch["dose"].to(device)          # (B, 1, D, H, W)
+        body_mask    = real_input[:, 7:8]                # (B, 1, D, H, W)
+        ptv_mask     = batch["ptv_mask"].to(device)      # (B, 1, D, H, W)
+        bladder_mask = batch["bladder_mask"].to(device)  # (B, 1, D, H, W)
+        rectum_mask  = batch["rectum_mask"].to(device)   # (B, 1, D, H, W)
 
         # ── Phase 1: Train the discriminator ──────────────────────────────
-        # Generator is not updated here — we only call optimizer_D.step()
-
         fake_dose = generator(real_input).detach()
-        # .detach() is critical: it cuts the fake dose off from the generator's
-        # computation graph. Without it, the discriminator loss would
-        # accidentally flow gradients back into the generator during Phase 1.
 
-        # Discriminator judges real pairs (sCT + real dose)
-        real_pair = torch.cat([real_input, real_dose], dim=1)  # (B, 10, D, H, W)
+        real_pair = torch.cat([real_input, real_dose], dim=1)
         pred_real = discriminator(real_pair)
         loss_D_real = criterion_GAN(pred_real, target_is_real=True)
 
-        # Discriminator judges fake pairs (sCT + generated dose)
-        fake_pair = torch.cat([real_input, fake_dose], dim=1)  # (B, 10, D, H, W)
+        fake_pair = torch.cat([real_input, fake_dose], dim=1)
         pred_fake = discriminator(fake_pair)
         loss_D_fake = criterion_GAN(pred_fake, target_is_real=False)
 
@@ -78,68 +92,96 @@ def train_one_epoch(
         optimizer_D.step()
 
         # ── Phase 2: Train the generator ──────────────────────────────────
-        # Discriminator weights are not updated here — only optimizer_G.step()
-
         fake_dose = generator(real_input)
-        # No .detach() here — we need gradients to flow back into the generator
 
         fake_pair = torch.cat([real_input, fake_dose], dim=1)
         pred_fake = discriminator(fake_pair)
 
-        # Adversarial loss: fool the discriminator into thinking fake is real
-        loss_G_adv = criterion_GAN(pred_fake, target_is_real=True)
-
-        # Voxel loss: stay close to the real dose map (body voxels only)
+        loss_G_adv   = criterion_GAN(pred_fake, target_is_real=True)
         loss_G_voxel = masked_l1(fake_dose, real_dose, body_mask)
+        loss_G_dvh   = (
+            structure_dmean_loss(fake_dose, real_dose, ptv_mask) +
+            structure_dmean_loss(fake_dose, real_dose, bladder_mask) +
+            structure_dmean_loss(fake_dose, real_dose, rectum_mask)
+        )
 
-        # Combined generator loss
-        loss_G = loss_G_adv + lambda_voxel * loss_G_voxel
+        loss_G = loss_G_adv + lambda_voxel * loss_G_voxel + lambda_dvh * loss_G_dvh
 
         optimizer_G.zero_grad()
         loss_G.backward()
         optimizer_G.step()
 
-        total_loss_D  += loss_D.item()
-        total_loss_G  += loss_G.item()
-        total_loss_L1 += loss_G_voxel.item()
+        total_loss_D   += loss_D.item()
+        total_loss_G   += loss_G.item()
+        total_loss_L1  += loss_G_voxel.item()
+        total_loss_dvh += loss_G_dvh.item()
 
     n = len(dataloader)
     return {
-        "loss_D":    total_loss_D  / n,
-        "loss_G":    total_loss_G  / n,
-        "train_L1":  total_loss_L1 / n,
+        "loss_D":    total_loss_D   / n,
+        "loss_G":    total_loss_G   / n,
+        "train_L1":  total_loss_L1  / n,
+        "train_dvh": total_loss_dvh / n,
     }
 
-def validate(
+DOSE_SCALE = 50.0
+
+
+def validate_dvh(
     generator:  UnetGenerator3d,
     val_loader: DataLoader,
     device:     torch.device,
-) -> float:
+) -> tuple:
     """
-    Runs the generator on the validation set and returns average L1 loss.
-    The discriminator plays no role here — we only care about dose accuracy
-    at validation time, not whether the output looks realistic to a critic.
+    Returns (val_L1, val_dvh_score).
+
+    val_L1       — body-masked L1 in normalised units (stored in checkpoint for
+                   backward compatibility with evaluate_dosegan.py).
+    val_dvh_score — mean|Δ PTV D95| + mean|Δ Bladder Dmean| + mean|Δ Rectum Dmean|
+                   in Gy. Lower is better. Used for early stopping.
     """
-
-    generator.eval()  # disables dropout and batchnorm randomness
-
-    total_loss = 0.0
+    generator.eval()
+    total_l1 = 0.0
+    ptv_d95_errs, bladder_dmean_errs, rectum_dmean_errs = [], [], []
 
     with torch.no_grad():
-        # torch.no_grad() tells PyTorch not to track gradients at all.
-        # During validation we are never calling .backward(), so storing
-        # the computation graph would just waste GPU memory.
         for batch in tqdm(val_loader, desc="Validating", leave=False):
             real_input = batch["input"].to(device)
             real_dose  = batch["dose"].to(device)
             body_mask  = real_input[:, 7:8]
 
             fake_dose = generator(real_input)
-            loss      = masked_l1(fake_dose, real_dose, body_mask)
-            total_loss += loss.item()
+            total_l1 += masked_l1(fake_dose, real_dose, body_mask).item()
 
-    generator.train()  # switch back to training mode before returning
-    return total_loss / len(val_loader)
+            pred_gy = fake_dose[0, 0].cpu().numpy() * DOSE_SCALE
+            true_gy = real_dose[0, 0].cpu().numpy() * DOSE_SCALE
+
+            ptv_m     = batch["ptv_mask"][0, 0].numpy()     > 0.5
+            bladder_m = batch["bladder_mask"][0, 0].numpy() > 0.5
+            rectum_m  = batch["rectum_mask"][0, 0].numpy()  > 0.5
+
+            if ptv_m.sum() > 0:
+                ptv_d95_errs.append(abs(
+                    float(np.percentile(pred_gy[ptv_m], 5)) -
+                    float(np.percentile(true_gy[ptv_m], 5))
+                ))
+            if bladder_m.sum() > 0:
+                bladder_dmean_errs.append(abs(
+                    float(pred_gy[bladder_m].mean()) - float(true_gy[bladder_m].mean())
+                ))
+            if rectum_m.sum() > 0:
+                rectum_dmean_errs.append(abs(
+                    float(pred_gy[rectum_m].mean()) - float(true_gy[rectum_m].mean())
+                ))
+
+    val_dvh_score = (
+        (np.mean(ptv_d95_errs)      if ptv_d95_errs      else 0.0) +
+        (np.mean(bladder_dmean_errs) if bladder_dmean_errs else 0.0) +
+        (np.mean(rectum_dmean_errs)  if rectum_dmean_errs  else 0.0)
+    )
+
+    generator.train()
+    return total_l1 / len(val_loader), float(val_dvh_score)
 
 def main():
     parser = argparse.ArgumentParser()
@@ -175,6 +217,7 @@ def main():
             "lr_G":         cfg.LR_G,
             "lr_D":         cfg.LR_D,
             "lambda_voxel": cfg.LAMBDA_VOXEL,
+            "lambda_dvh":   cfg.LAMBDA_DVH,
             "ngf":          cfg.NGF,
             "ndf":          cfg.NDF,
             "n_layers":     cfg.N_LAYERS,
@@ -240,26 +283,26 @@ def main():
     criterion_GAN = GANLoss(use_lsgan=cfg.USE_LSGAN).to(device)
 
     # ── Training loop ──────────────────────────────────────────────────────
-    best_val_loss = float("inf")
+    best_val_L1    = float("inf")   # stored in checkpoint for eval script compat.
+    best_dvh_score = float("inf")   # used for early stopping decision
     epochs_no_improve = 0
 
     for epoch in range(1, cfg.EPOCHS + 1):
         train_losses = train_one_epoch(
             generator, discriminator, train_loader,
             optimizer_G, optimizer_D,
-            criterion_GAN, cfg.LAMBDA_VOXEL, device,
+            criterion_GAN, cfg.LAMBDA_VOXEL, cfg.LAMBDA_DVH, device,
         )
-        val_loss = validate(generator, val_loader, device)
+        val_l1, val_dvh = validate_dvh(generator, val_loader, device)
 
-        # ── Log to W&B ────────────────────────────────────────────────────
-        # This sends all losses to your dashboard after every epoch.
-        # You'll see live training curves at wandb.ai while training runs.
         wandb.log({
             "epoch":      epoch,
             "loss_D":     train_losses["loss_D"],
             "loss_G":     train_losses["loss_G"],
             "train_L1":   train_losses["train_L1"],
-            "val_L1":     val_loss,
+            "train_dvh":  train_losses["train_dvh"],
+            "val_L1":     val_l1,
+            "val_dvh":    val_dvh,
         })
 
         log.info(
@@ -267,20 +310,24 @@ def main():
             f"loss_D: {train_losses['loss_D']:.4f} | "
             f"loss_G: {train_losses['loss_G']:.4f} | "
             f"train_L1: {train_losses['train_L1']:.4f} | "
-            f"val_L1: {val_loss:.4f}"
+            f"train_dvh: {train_losses['train_dvh']:.4f} | "
+            f"val_L1: {val_l1:.4f} | "
+            f"val_dvh: {val_dvh:.3f} Gy"
         )
 
-        if val_loss < best_val_loss:
-            best_val_loss = val_loss
+        if val_dvh < best_dvh_score:
+            best_dvh_score = val_dvh
+            best_val_L1    = val_l1
             epochs_no_improve = 0
             ckpt_path = cfg.CKPT_DIR / f"{cfg.RUN_NAME}_fold{cfg.FOLD}_best.pt"
             torch.save({
-                "epoch":         epoch,
-                "generator":     generator.state_dict(),
-                "discriminator": discriminator.state_dict(),
-                "optimizer_G":   optimizer_G.state_dict(),
-                "optimizer_D":   optimizer_D.state_dict(),
-                "best_val_loss": best_val_loss,
+                "epoch":          epoch,
+                "generator":      generator.state_dict(),
+                "discriminator":  discriminator.state_dict(),
+                "optimizer_G":    optimizer_G.state_dict(),
+                "optimizer_D":    optimizer_D.state_dict(),
+                "best_val_loss":  best_val_L1,    # body-masked L1 (eval script compat.)
+                "best_dvh_score": best_dvh_score,
             }, ckpt_path)
             log.info(f"  ✓ Checkpoint saved: {ckpt_path}")
         else:
