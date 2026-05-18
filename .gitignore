@@ -17,12 +17,14 @@ data/pickles/
 !data/split.csv
 !data/preprocessing_summary.csv
 data/zotero_library.json
+data/zotero_papers.json
 
 # Training outputs — ignore everything; nothing here is committed
 outputs/checkpoints_*/
 outputs/visualisations/
 outputs/logs/
 outputs/evaluation/
+outputs/analysis/
 
 # Personal context files — ignore everything in docs/ except the tracker
 docs/*
