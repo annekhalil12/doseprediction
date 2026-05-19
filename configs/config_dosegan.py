@@ -16,7 +16,7 @@ CKPT_DIR   = Path("outputs/checkpoints_dosegan")
 # Change RUN_NAME when you change anything meaningful — this is what shows
 # up in the W&B dashboard so you can tell runs apart at a glance.
 PROJECT_NAME = "doseprediction-lundprobe"
-RUN_NAME     = "dosegan_ngf32_sigmoid_snellius"   # fold number appended at runtime
+RUN_NAME     = "dosegan_ngf32_sigmoid_grad_snellius"   # fold number appended at runtime
 
 # ── Cross-validation ───────────────────────────────────────────────────────
 FOLD = 0  # which fold is held out as validation this run (0–4)
@@ -42,5 +42,6 @@ BETA2  = 0.999        # Adam beta2
 # ── Loss weights ───────────────────────────────────────────────────────────
 LAMBDA_VOXEL        = 100  # weight of L1 voxel loss relative to adversarial loss
 LAMBDA_DVH          = 5.0  # weight for structure-Dmean DVH regularisation loss
+LAMBDA_GRAD         = 10.0 # weight for gradient-magnitude loss (dose falloff sharpness)
 EARLY_STOP_PATIENCE = 15   # stop if val_dvh_score does not improve for this many epochs
 USE_LSGAN    = True   # True = LSGAN (MSE), False = vanilla GAN (BCE)

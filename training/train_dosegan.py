@@ -8,6 +8,7 @@ import sys
 from tqdm import tqdm
 import numpy as np
 import torch
+import torch.nn.functional as F
 from torch.utils.data import DataLoader
 from pathlib import Path
 import logging
@@ -42,6 +43,17 @@ def structure_dmean_loss(
     return loss[~absent].mean() if (~absent).any() else pred.sum() * 0.0
 
 
+def gradient_magnitude_loss(pred: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
+    # L1 loss on finite-difference gradients in all 3 spatial dimensions.
+    # Penalises blurring of dose gradients — sharper dose falloff at PTV boundary.
+    dx = lambda v: v[:, :, 1:, :, :] - v[:, :, :-1, :, :]
+    dy = lambda v: v[:, :, :, 1:, :] - v[:, :, :, :-1, :]
+    dz = lambda v: v[:, :, :, :, 1:] - v[:, :, :, :, :-1]
+    return (F.l1_loss(dx(pred), dx(target)) +
+            F.l1_loss(dy(pred), dy(target)) +
+            F.l1_loss(dz(pred), dz(target))) / 3
+
+
 def train_one_epoch(
     generator:     UnetGenerator3d,
     discriminator: NLayerDiscriminator,
@@ -51,6 +63,7 @@ def train_one_epoch(
     criterion_GAN: GANLoss,
     lambda_voxel:  float,
     lambda_dvh:    float,
+    lambda_grad:   float,
     device:        torch.device,
 ) -> dict:
     """
@@ -61,10 +74,11 @@ def train_one_epoch(
     generator.train()
     discriminator.train()
 
-    total_loss_D   = 0.0
-    total_loss_G   = 0.0
-    total_loss_L1  = 0.0
-    total_loss_dvh = 0.0
+    total_loss_D    = 0.0
+    total_loss_G    = 0.0
+    total_loss_L1   = 0.0
+    total_loss_dvh  = 0.0
+    total_loss_grad = 0.0
 
     for batch in tqdm(dataloader, desc="Training", leave=False):
         real_input   = batch["input"].to(device)         # (B, 9, D, H, W)
@@ -104,24 +118,30 @@ def train_one_epoch(
             structure_dmean_loss(fake_dose, real_dose, bladder_mask) +
             structure_dmean_loss(fake_dose, real_dose, rectum_mask)
         )
+        loss_G_grad  = gradient_magnitude_loss(fake_dose, real_dose)
 
-        loss_G = loss_G_adv + lambda_voxel * loss_G_voxel + lambda_dvh * loss_G_dvh
+        loss_G = (loss_G_adv
+                  + lambda_voxel * loss_G_voxel
+                  + lambda_dvh   * loss_G_dvh
+                  + lambda_grad  * loss_G_grad)
 
         optimizer_G.zero_grad()
         loss_G.backward()
         optimizer_G.step()
 
-        total_loss_D   += loss_D.item()
-        total_loss_G   += loss_G.item()
-        total_loss_L1  += loss_G_voxel.item()
-        total_loss_dvh += loss_G_dvh.item()
+        total_loss_D    += loss_D.item()
+        total_loss_G    += loss_G.item()
+        total_loss_L1   += loss_G_voxel.item()
+        total_loss_dvh  += loss_G_dvh.item()
+        total_loss_grad += loss_G_grad.item()
 
     n = len(dataloader)
     return {
-        "loss_D":    total_loss_D   / n,
-        "loss_G":    total_loss_G   / n,
-        "train_L1":  total_loss_L1  / n,
-        "train_dvh": total_loss_dvh / n,
+        "loss_D":     total_loss_D    / n,
+        "loss_G":     total_loss_G    / n,
+        "train_L1":   total_loss_L1   / n,
+        "train_dvh":  total_loss_dvh  / n,
+        "train_grad": total_loss_grad / n,
     }
 
 DOSE_SCALE = 50.0
@@ -218,6 +238,7 @@ def main():
             "lr_D":         cfg.LR_D,
             "lambda_voxel": cfg.LAMBDA_VOXEL,
             "lambda_dvh":   cfg.LAMBDA_DVH,
+            "lambda_grad":  cfg.LAMBDA_GRAD,
             "ngf":          cfg.NGF,
             "ndf":          cfg.NDF,
             "n_layers":     cfg.N_LAYERS,
@@ -291,18 +312,19 @@ def main():
         train_losses = train_one_epoch(
             generator, discriminator, train_loader,
             optimizer_G, optimizer_D,
-            criterion_GAN, cfg.LAMBDA_VOXEL, cfg.LAMBDA_DVH, device,
+            criterion_GAN, cfg.LAMBDA_VOXEL, cfg.LAMBDA_DVH, cfg.LAMBDA_GRAD, device,
         )
         val_l1, val_dvh = validate_dvh(generator, val_loader, device)
 
         wandb.log({
-            "epoch":      epoch,
-            "loss_D":     train_losses["loss_D"],
-            "loss_G":     train_losses["loss_G"],
-            "train_L1":   train_losses["train_L1"],
-            "train_dvh":  train_losses["train_dvh"],
-            "val_L1":     val_l1,
-            "val_dvh":    val_dvh,
+            "epoch":       epoch,
+            "loss_D":      train_losses["loss_D"],
+            "loss_G":      train_losses["loss_G"],
+            "train_L1":    train_losses["train_L1"],
+            "train_dvh":   train_losses["train_dvh"],
+            "train_grad":  train_losses["train_grad"],
+            "val_L1":      val_l1,
+            "val_dvh":     val_dvh,
         })
 
         log.info(
@@ -311,6 +333,7 @@ def main():
             f"loss_G: {train_losses['loss_G']:.4f} | "
             f"train_L1: {train_losses['train_L1']:.4f} | "
             f"train_dvh: {train_losses['train_dvh']:.4f} | "
+            f"train_grad: {train_losses['train_grad']:.4f} | "
             f"val_L1: {val_l1:.4f} | "
             f"val_dvh: {val_dvh:.3f} Gy"
         )

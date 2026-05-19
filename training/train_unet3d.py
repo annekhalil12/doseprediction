@@ -9,6 +9,7 @@ import logging
 import numpy as np
 import wandb
 import torch
+import torch.nn.functional as F
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
@@ -38,10 +39,22 @@ def structure_dmean_loss(pred, target, mask):
     return loss[~absent].mean() if (~absent).any() else pred.sum() * 0.0
 
 
-def train_one_epoch(model, loader, optimizer, device, lambda_dvh):
+def gradient_magnitude_loss(pred: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
+    # L1 loss on finite-difference gradients in all 3 spatial dimensions.
+    # Penalises blurring of dose gradients — sharper dose falloff at PTV boundary.
+    dx = lambda v: v[:, :, 1:, :, :] - v[:, :, :-1, :, :]
+    dy = lambda v: v[:, :, :, 1:, :] - v[:, :, :, :-1, :]
+    dz = lambda v: v[:, :, :, :, 1:] - v[:, :, :, :, :-1]
+    return (F.l1_loss(dx(pred), dx(target)) +
+            F.l1_loss(dy(pred), dy(target)) +
+            F.l1_loss(dz(pred), dz(target))) / 3
+
+
+def train_one_epoch(model, loader, optimizer, device, lambda_dvh, lambda_grad):
     model.train()
-    total_l1  = 0.0
-    total_dvh = 0.0
+    total_l1   = 0.0
+    total_dvh  = 0.0
+    total_grad = 0.0
 
     for batch in tqdm(loader, desc="Training", leave=False):
         real_input   = batch["input"].to(device)
@@ -58,16 +71,23 @@ def train_one_epoch(model, loader, optimizer, device, lambda_dvh):
             structure_dmean_loss(pred, real_dose, bladder_mask) +
             structure_dmean_loss(pred, real_dose, rectum_mask)
         )
-        loss = loss_voxel + lambda_dvh * loss_dvh
+        loss_grad  = gradient_magnitude_loss(pred, real_dose)
+        loss = loss_voxel + lambda_dvh * loss_dvh + lambda_grad * loss_grad
 
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
 
-        total_l1  += loss_voxel.item()
-        total_dvh += loss_dvh.item()
+        total_l1   += loss_voxel.item()
+        total_dvh  += loss_dvh.item()
+        total_grad += loss_grad.item()
 
-    return {"train_L1": total_l1 / len(loader), "train_dvh": total_dvh / len(loader)}
+    n = len(loader)
+    return {
+        "train_L1":   total_l1   / n,
+        "train_dvh":  total_dvh  / n,
+        "train_grad": total_grad / n,
+    }
 
 
 def validate_dvh(model, loader, device):
@@ -158,6 +178,7 @@ def main():
             "batch_size":         cfg.BATCH_SIZE,
             "lr":                 cfg.LR,
             "lambda_dvh":         cfg.LAMBDA_DVH,
+            "lambda_grad":        cfg.LAMBDA_GRAD,
             "channels":           cfg.CHANNELS,
             "strides":            cfg.STRIDES,
             "num_res_units":      cfg.NUM_RES_UNITS,
@@ -217,20 +238,22 @@ def main():
     epochs_no_improve = 0
 
     for epoch in range(1, cfg.EPOCHS + 1):
-        train_losses = train_one_epoch(model, train_loader, optimizer, device, cfg.LAMBDA_DVH)
+        train_losses = train_one_epoch(model, train_loader, optimizer, device, cfg.LAMBDA_DVH, cfg.LAMBDA_GRAD)
         val_l1, val_dvh = validate_dvh(model, val_loader, device)
 
         wandb.log({
-            "epoch":     epoch,
-            "train_L1":  train_losses["train_L1"],
-            "train_dvh": train_losses["train_dvh"],
-            "val_L1":    val_l1,
-            "val_dvh":   val_dvh,
+            "epoch":      epoch,
+            "train_L1":   train_losses["train_L1"],
+            "train_dvh":  train_losses["train_dvh"],
+            "train_grad": train_losses["train_grad"],
+            "val_L1":     val_l1,
+            "val_dvh":    val_dvh,
         })
         log.info(
             f"Epoch {epoch:03d} | "
             f"train_L1: {train_losses['train_L1']:.4f} | "
             f"train_dvh: {train_losses['train_dvh']:.4f} | "
+            f"train_grad: {train_losses['train_grad']:.4f} | "
             f"val_L1: {val_l1:.4f} | "
             f"val_dvh: {val_dvh:.3f} Gy"
         )
