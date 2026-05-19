@@ -2,7 +2,7 @@
 
 Working document. Update as runs complete and sections are drafted.
 
-Last updated: 2026-05-18
+Last updated: 2026-05-20
 
 ---
 
@@ -12,26 +12,25 @@ Last updated: 2026-05-18
 - [x] U-Net Sigmoid — 5-fold trained + evaluated (val)
 - [x] U-Net Tanh — 5-fold trained + evaluated (val)
 - [x] DoseGAN Tanh — 5-fold trained + evaluated (val)
+- [x] DoseGAN Sigmoid — 5-fold trained + evaluated (val)
 - [x] 2x2 activation ablation (U-Net x DoseGAN, Tanh vs Sigmoid) — decision: Sigmoid wins for both
-- [x] Investigation 1 (acquisition group breakdown) — U-Net Sigmoid + DoseGAN Tanh
-- [x] Investigation 2 (worst-case patient visualisations) — U-Net Sigmoid + DoseGAN Tanh
-- [x] Investigation 3 (dose-smearing index) — code exists
+- [x] Investigation 1 (acquisition group breakdown) — U-Net Sigmoid + DoseGAN Sigmoid
+- [x] Investigation 2 (worst-case patient visualisations) — U-Net Sigmoid + DoseGAN Sigmoid
+- [x] Investigation 3 (dose-smearing index) — code exists, run on DoseGAN Tanh only
 - [x] Literature comparison table finalised — full-text details extracted for all 11 papers; Kandalan 2021 and Lempart 2021 added to Zotero and notes completed
-- [x] DVH comparison with literature — per-metric absolute errors (% Rx) computed and benchmarked against Fransson 2024, Kandalan 2021, Lempart 2021 (see Section 3.7)
+- [x] DVH comparison with literature — per-metric absolute errors (% Rx) computed and benchmarked against Fransson 2024, Kandalan 2021, Lempart 2021 (see Section 3.5)
 - [x] DVH acquisition-group breakdown — newAcq vs oldAcq for all DVH metrics; finding: errors comparable across groups at DVH level (see Section 3.3)
 - [x] Penile Bulb evaluation added to both eval scripts (extracted from input channel 6; NaN for ~48 absent patients — handled automatically by dvh_metrics)
 - [x] DVH regularisation loss implemented in both training scripts — `structure_dmean_loss(PTV + Bladder + Rectum)`, weighted by LAMBDA_DVH (5.0 for DoseGAN, 0.1 for U-Net)
 - [x] DVH early stopping implemented in both training scripts — monitors `val_dvh_score = mean|Δ PTV D95| + mean|Δ Bladder Dmean| + mean|Δ Rectum Dmean|` in Gy instead of body-masked L1
 
 ### Pending
-- [ ] DoseGAN Sigmoid 5-fold training (jobs 22845136–22845139, ETA ~2026-05-19)
-- [ ] DoseGAN Sigmoid evaluation (run `sbatch eval_dosegan.sbatch` once training done)
-- [ ] DoseGAN Sigmoid Inv1 + Inv2 analyses
 - [ ] Investigation 3 at scale across all 4 model variants
 - [ ] DVH curve comparison (not yet implemented)
 - [ ] Gamma analysis (not yet implemented)
 - [ ] Test-set evaluation for all final models (val set only so far)
 - [ ] DoseGNN results (collaborator)
+- [ ] DVH metrics for DoseGAN Sigmoid (to fill in Section 3.5 table)
 
 ### Blocked
 - DoseGNN — waiting on collaborator
@@ -70,9 +69,9 @@ Last updated: 2026-05-18
 
 | # | Item | Status | Source |
 |---|------|--------|--------|
-| R1 | Table: body_MAE_Gy and body_RMSE_Gy per model, mean ± std across 5 folds | PARTIAL — DoseGAN Sigmoid pending | `outputs/evaluation/*_fold*_val.csv` |
+| R1 | Table: body_MAE_Gy and body_RMSE_Gy per model, mean ± std across 5 folds | PARTIAL — DoseGNN pending | `outputs/evaluation/*_fold*_val.csv` |
 | R2 | U-Net Sigmoid: body_MAE_Gy = 0.861 ± 0.026 Gy; body_RMSE_Gy = 1.514 ± 0.038 Gy | READY | `outputs/evaluation/unet3d_ch32_sigmoid_snellius_fold*_val.csv` |
-| R3 | DoseGAN Sigmoid: body_MAE_Gy + body_RMSE_Gy | PENDING | `outputs/evaluation/dosegan_ngf32_sigmoid_snellius_fold*_val.csv` |
+| R3 | DoseGAN Sigmoid: body_MAE_Gy = 0.868 ± 0.035 Gy; body_RMSE_Gy = 1.521 ± 0.045 Gy | READY | `outputs/evaluation/dosegan_ngf32_sigmoid_snellius_fold*_val.csv` |
 | R4 | DoseGNN: body_MAE_Gy + body_RMSE_Gy | PENDING collaborator | — |
 | R5 | Test-set results for all final models | PENDING | requires test-split eval |
 
@@ -80,7 +79,7 @@ Last updated: 2026-05-18
 
 | # | Item | Status | Source |
 |---|------|--------|--------|
-| R6 | Table: Tanh vs Sigmoid for U-Net and DoseGAN, per fold + mean ± std | PARTIAL — DoseGAN Sigmoid pending | Section 5 below |
+| R6 | Table: Tanh vs Sigmoid for U-Net and DoseGAN, per fold + mean ± std | READY | Section 5 below |
 | R7 | U-Net: Sigmoid 0.861 ± 0.026 vs Tanh 0.895 ± 0.041 Gy (body_MAE); Sigmoid wins every fold | READY | `outputs/evaluation/` |
 | R8 | DoseGAN: Sigmoid val_L1 0.0174 ± 0.0007 vs Tanh 0.0182 ± 0.0013 — Sigmoid wins/ties every fold | READY | W&B groups dosegan_ngf32_{sigmoid,tanh}_snellius |
 | R9 | Conclusion: Sigmoid adopted as default for both models | READY | Section 5 below |
@@ -91,9 +90,20 @@ Last updated: 2026-05-18
 |---|------|--------|--------|
 | R10 | Boxplot: body_MAE_Gy by oldAcq vs newAcq, U-Net Sigmoid | READY | `outputs/analysis/inv1_unet3d_ch32_sigmoid_snellius_acquisition_boxplot.png` |
 | R11 | Per-group means and medians CSV, U-Net Sigmoid | READY | `outputs/analysis/inv1_unet3d_ch32_sigmoid_snellius_acquisition_breakdown.csv` |
-| R12 | Same for DoseGAN Tanh | READY | `outputs/analysis/inv1_dosegan_*_acquisition_*` |
-| R13 | Same for DoseGAN Sigmoid | PENDING | — |
+| R12 | Same for DoseGAN Tanh | NOT RUN — Inv1 was never run on DoseGAN Tanh; not needed now that Sigmoid is the final model | — |
+| R13 | Per-group means and medians, DoseGAN Sigmoid | READY | `outputs/analysis/inv1_dosegan_ngf32_sigmoid_snellius_acquisition_breakdown.csv` |
 | R14 | Finding: oldAcq patients drive body-MAE tail; but DVH-level errors are comparable across groups | READY (refined) | Inv 1 outputs + Section 3.7 below |
+
+**DoseGAN Sigmoid acquisition group breakdown (N=367 val patients across 5 folds):**
+
+| Group | Mean MAE (Gy) | Median MAE (Gy) |
+|---|---|---|
+| oldAcq (N=274) | 0.875 | 0.824 |
+| newAcq (N=93) | 0.845 | 0.829 |
+| difference (old − new) | +0.030 Gy | — |
+| Mann-Whitney U | 12860 | p = 0.894 |
+
+Finding: The 0.030 Gy mean difference is not statistically significant (p=0.894). As with U-Net Sigmoid, the distribution shift between acquisition groups does not produce a systematic mean-level degradation. The tail (worst 15 patients, all oldAcq except one) is where the gap lives.
 
 **DVH acquisition-group breakdown (U-Net Sigmoid, N=367 val patients; % of Rx = 50 Gy):**
 
@@ -119,39 +129,60 @@ Last updated: 2026-05-18
 | Bladder D95 | 0.88% ± 1.09% | 1.09% ± 1.93% | 1.24× |
 | Body MAE | 0.893 ± 0.178 Gy | 0.918 ± 0.258 Gy | 1.03× |
 
-**Key finding:** All ratios are within 0.87×–1.24×. Distribution shift between acquisition groups manifests as tail-risk inflation at the body-MAE level (all 15 worst-MAE patients are oldAcq), NOT as systematic DVH-level degradation. Clinically relevant metrics (PTV coverage, OAR doses) are statistically comparable across groups.
+**Key finding:** All ratios are within 0.87×–1.24×. Distribution shift between acquisition groups manifests as tail-risk inflation at the body-MAE level (14/15 worst-MAE patients across all folds are oldAcq), NOT as systematic DVH-level degradation. Clinically relevant metrics (PTV coverage, OAR doses) are statistically comparable across groups.
 
 ### 3.4 Investigation 2: Worst-case visualisations
 
 | # | Item | Status | Source |
 |---|------|--------|--------|
 | R15 | Top-3 worst-case patient panels per fold (15 panels), U-Net Sigmoid | READY | `outputs/analysis/inv2_unet3d_ch32_sigmoid_snellius_worst_*.png` |
-| R16 | Same for DoseGAN Tanh | READY | `outputs/analysis/inv2_dosegan_*.png` |
-| R17 | Same for DoseGAN Sigmoid | PENDING | — |
-| R18 | Failure pattern: bladder over-prediction and dose-smearing | READY | Inv 2 outputs |
+| R16 | Same for DoseGAN Tanh | NOT RUN — never executed; not needed now that Sigmoid is the final model | — |
+| R17 | Same for DoseGAN Sigmoid | READY | `outputs/analysis/inv2_dosegan_ngf32_sigmoid_snellius_worst_*.png` |
+| R18 | Failure pattern summary (DoseGAN Sigmoid, from Inv2 visual inspection of all 15 patients) | READY | below |
+
+**DoseGAN Sigmoid Inv2 findings (15 worst-MAE patients, 3 per fold):**
+
+Patient composition: 14/15 oldAcq, 1/15 newAcq. The single newAcq failure (fold 3 rank 3, MAE=1.39 Gy) shows the same failure patterns as the oldAcq cases.
+
+| Failure mode | Frequency across 15 patients | Description |
+|---|---|---|
+| PTV well-predicted | 14/15 | DVH curves nearly identical; model reliably covers the target |
+| Bladder under-prediction | ~11/15 | Predicted bladder DVH curve shifted left — model assigns less dose to bladder than ground truth. Dominant and systematic failure. |
+| Rectum over-prediction | ~5/15 | Occasional; not systematic |
+| Dose blurring (ring/halo pattern) | ~8/15 | Over-prediction in the penumbra (dose falloff zone), under-prediction at body edge; model smooths dose gradients |
+| Lateral asymmetry | ~4/15 | Model predicts symmetric dose for a patient whose real distribution is asymmetric; associated with atypical anatomy |
+| Localised hotspot/coldspot | ~2/15 | Concentrated error near organ boundary; likely patient with unusual bladder proximity to PTV |
+
+**Notable individual cases:**
+- Fold 1 rank 1 (oldAcq_bfc95ad92b2a0fc8, MAE=2.40 Gy): strongest lateral asymmetry error; likely atypical anatomy. Localised errors up to ±15 Gy.
+- Fold 4 ranks 1–3: all show the same "sunburst" radial error pattern in the axial view, suggesting a fold-4-specific failure cluster.
+- Fold 0 rank 3: reversed blurring (blue centre, red ring) — under-prediction in the PTV core, over-prediction in penumbra; opposite of the typical pattern.
+
+**Clinical interpretation:** The model is reliable on target coverage (PTV) but has a systematic blind spot on bladder dose, predicting lower bladder dose than is actually delivered. This holds across both acquisition groups. The spatial errors are primarily due to smoothing of dose gradients rather than global bias.
 
 ### 3.5 DVH comparison with literature
 
 All values are mean |Δ| (mean absolute error) as % of prescription dose (50 Gy), N=367 val patients. Literature values as reported. See `docs/literature_comparison.md` for full detail and caveats.
 
-| Metric | U-Net Sigmoid | DoseGAN Tanh | Fransson 2024 | Kandalan 2021 | Lempart 2021 |
-|---|---|---|---|---|---|
-| PTV/CTV Dmean | **0.49%** ± 0.79% | 1.59% ± 1.42% | 0.7% (CTV) | 1.0% | — |
-| PTV D95 | **0.69%** ± 1.11% | 1.85% ± 1.67% | 0.7% (CTV) | **0.4%** | 1.0% |
-| PTV D98 | **0.79%** ± 1.30% | 2.01% ± 1.86% | 3.2% (PTV) | 1.6% (D2) | 1.9% |
-| Bladder Dmean | 1.65% ± 1.37% | 1.84% ± 1.51% | **0.7%** | 1.8% | ≤ 2.6% |
-| Rectum Dmean | 2.54% ± 2.03% | 2.59% ± 2.07% | n/r | — | ≤ 2.6% |
-| Rectum D95 | 0.59% ± 0.56% | 0.62% ± 0.58% | — | — | — |
+| Metric | U-Net Sigmoid | DoseGAN Sigmoid | DoseGAN Tanh | Fransson 2024 | Kandalan 2021 | Lempart 2021 |
+|---|---|---|---|---|---|---|
+| PTV/CTV Dmean | **0.49%** ± 0.79% | PENDING | 1.59% ± 1.42% | 0.7% (CTV) | 1.0% | — |
+| PTV D95 | **0.69%** ± 1.11% | PENDING | 1.85% ± 1.67% | 0.7% (CTV) | **0.4%** | 1.0% |
+| PTV D98 | **0.79%** ± 1.30% | PENDING | 2.01% ± 1.86% | 3.2% (PTV) | 1.6% (D2) | 1.9% |
+| Bladder Dmean | 1.65% ± 1.37% | PENDING | 1.84% ± 1.51% | **0.7%** | 1.8% | ≤ 2.6% |
+| Rectum Dmean | 2.54% ± 2.03% | PENDING | 2.59% ± 2.07% | n/r | — | ≤ 2.6% |
+| Rectum D95 | 0.59% ± 0.56% | PENDING | 0.62% ± 0.58% | — | — | — |
 
 **Interpretation for thesis:**
 - U-Net Sigmoid PTV metrics are competitive with or better than every prostate paper. PTV D98 (0.79%) substantially outperforms Fransson (3.2%) and Lempart (1.9%).
 - Bladder Dmean gap vs Fransson (1.65% vs 0.7%): explained by cohort heterogeneity (N=432, two acquisition eras, real-world bladder filling variability) not model weakness. Acquisition-group breakdown confirms both groups show identical bladder errors (~1.65–1.68%).
 - DoseGAN Tanh PTV metrics are within Lempart range but clearly behind U-Net. The U-Net vs DoseGAN gap holds across both acquisition groups, indicating it is architectural, not data-driven.
 - No prostate paper reports body-masked voxel MAE in Gy; 0.861 Gy compares favourably to Feng 2024 breast result (1.076 Gy, same metric definition).
+- DoseGAN Sigmoid DVH metrics pending — requires running DVH computation on existing eval CSVs.
 
 | # | Item | Status | Source |
 |---|------|--------|--------|
-| R23 | DVH comparison table (as above) | READY | `docs/literature_comparison.md` |
+| R23 | DVH comparison table (as above) | PARTIAL — DoseGAN Sigmoid DVH pending | `docs/literature_comparison.md` |
 | R24 | Bladder Dmean gap explanation (cohort heterogeneity, not model weakness) | READY | acquisition-group breakdown + Fransson N=35 context |
 | R25 | Voxel MAE benchmark vs Feng 2024 (breast): 0.861 vs 1.076 Gy | READY | `docs/literature_comparison.md` |
 
@@ -161,7 +192,7 @@ All values are mean |Δ| (mean absolute error) as % of prescription dose (50 Gy)
 
 | # | Item | Status | Source |
 |---|------|--------|--------|
-| R19 | Per-patient dose-smearing index across all 4 variants, with oldAcq/newAcq breakdown | OPTIONAL — code exists | analysis scripts |
+| R19 | Per-patient dose-smearing index across all 4 variants, with oldAcq/newAcq breakdown | OPTIONAL — code exists, run on DoseGAN Tanh only | analysis scripts |
 | R20 | Correlation between dose-smearing index and body_MAE_Gy | OPTIONAL | derived from R19 |
 
 ### 3.7 Clinical metrics (optional)
@@ -177,10 +208,10 @@ All values are mean |Δ| (mean absolute error) as % of prescription dose (50 Gy)
 
 | # | Item | Status | Source |
 |---|------|--------|--------|
-| D1 | Headline result: which model achieves lowest body_MAE/RMSE and by how much | PENDING DoseGAN Sigmoid + DoseGNN | R1 |
+| D1 | Headline result: which model achieves lowest body_MAE/RMSE and by how much | PARTIAL — DoseGNN pending; U-Net Sigmoid (0.861 Gy) marginally better than DoseGAN Sigmoid (0.868 Gy) | R1–R3 |
 | D2 | Activation finding: Sigmoid consistently outperforms Tanh; range match to normalised [0,1] dose target; small deviation from Kearney et al. | READY | Section 5 |
 | D3 | Acquisition group shift: oldAcq patients drive the error tail; implications for transfer to pancreatic cohort (Phase 2) | READY | R10–R14 |
-| D4 | Failure modes: bladder over-prediction and dose-smearing; activation choice does not resolve these | READY | R15–R18 |
+| D4 | Failure modes (DoseGAN Sigmoid): bladder under-prediction is the dominant systematic failure; dose blurring (gradient smoothing) is the dominant spatial pattern; lateral asymmetry is a secondary failure in atypical anatomy cases | READY | R17–R18 |
 | D5 | Dose-smearing index: if R19 is run, provides a quantitative characterisation of the dominant failure mode | OPTIONAL | R19–R20 |
 | D6 | Limitations: val-set-only metrics, no DVH/gamma, single dataset (Phase 1), batch_size=1 with BatchNorm3d, geometric channels 8–14 not implemented | READY | — |
 | D7 | Reflection: dose-smearing should be addressed at the loss level; DVH regularisation loss now implemented (M16); γ-pass-rate loss remains future work | READY | M16 |
@@ -198,8 +229,8 @@ Both U-Net and DoseGAN were trained with 5-fold CV on LUND-PROBE, all hyperparam
 |---|---|---|---|---|
 | U-Net | Sigmoid | **0.861 ± 0.026** | **1.514 ± 0.038** | — |
 | U-Net | Tanh | 0.895 ± 0.041 | 1.670 ± 0.050 | — |
-| DoseGAN | Sigmoid | pending | pending | **0.0174 ± 0.0007** |
-| DoseGAN | Tanh | pending | pending | 0.0182 ± 0.0013 |
+| DoseGAN | Sigmoid | **0.868 ± 0.035** | **1.521 ± 0.045** | **0.0174 ± 0.0007** |
+| DoseGAN | Tanh | — | — | 0.0182 ± 0.0013 |
 
 U-Net body_MAE_Gy per fold:
 
@@ -211,6 +242,16 @@ U-Net body_MAE_Gy per fold:
 | 3 | 0.873 | 0.921 |
 | 4 | 0.833 | 0.860 |
 
+DoseGAN body_MAE_Gy per fold:
+
+| Fold | Sigmoid | Tanh |
+|---|---|---|
+| 0 | 0.860 | — |
+| 1 | 0.904 | — |
+| 2 | 0.837 | — |
+| 3 | 0.904 | — |
+| 4 | 0.833 | — |
+
 Sigmoid wins on every fold for U-Net. For DoseGAN, Sigmoid wins or ties on every fold with ~4% lower mean and lower variance. The dose target is normalised to [0, 1] (dose / 50 Gy), making Sigmoid the natural range-matched output. Sigmoid is adopted as the default for both models. Tanh is retained in the ablation table and discussed as a deviation from Kearney et al. 2020.
 
 Draft methods footnote:
@@ -220,17 +261,14 @@ Draft methods footnote:
 
 ## 6. Next Steps (priority order)
 
-1. Wait for DoseGAN Sigmoid training to finish (jobs 22845136–22845139, ETA ~2026-05-19). Monitor: `squeue -u akhalil`.
-2. Evaluate DoseGAN Sigmoid: `sbatch eval_dosegan.sbatch` (loops folds 0–4). Penile Bulb metrics now included automatically.
-3. Compute DVH metrics for DoseGAN Sigmoid; fill in R3 (body_MAE/RMSE) and update Section 3.5 DVH table.
-4. Run Inv1 + Inv2 for DoseGAN Sigmoid; fill in R13, R17.
-5. Run Investigation 3 at scale across all 4 model variants.
-6. Implement test-set evaluation for final models.
-7. (Optional) Re-train with DVH loss + DVH early stopping (M16–M17) to quantify improvement. Compare new val_dvh_score vs baseline. Note: currently running DoseGAN Sigmoid jobs (22845136–22845139) use the old loss — these are still valid as a baseline.
-8. (Stretch) Implement full DVH curves and gamma pass rate.
-9. Draft Methods using M1–M18 as checklist.
-10. Draft Results using R1–R25 as checklist.
-11. Draft Discussion using D1–D10 as checklist; prioritise D2, D3, D4, D9.
+1. Compute DVH metrics for DoseGAN Sigmoid to fill in Section 3.5 table (run DVH script on existing `outputs/evaluation/dosegan_ngf32_sigmoid_snellius_fold*_val.csv`).
+2. Run Investigation 3 at scale across all 4 model variants.
+3. Implement test-set evaluation for final models.
+4. (Optional) Re-train with DVH loss + DVH early stopping (M16–M17) to quantify improvement. Note: current DoseGAN Sigmoid and U-Net Sigmoid runs are valid baselines without these.
+5. (Stretch) Implement full DVH curves and gamma pass rate.
+6. Draft Methods using M1–M18 as checklist.
+7. Draft Results using R1–R25 as checklist.
+8. Draft Discussion using D1–D10 as checklist; prioritise D2, D3, D4, D9.
 
 ---
 
