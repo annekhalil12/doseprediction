@@ -30,7 +30,6 @@ Last updated: 2026-05-20
 - [ ] Gamma analysis (not yet implemented)
 - [ ] Test-set evaluation for all final models (val set only so far)
 - [ ] DoseGNN results (collaborator)
-- [ ] DVH metrics for DoseGAN Sigmoid (to fill in Section 3.5 table)
 
 ### Blocked
 - DoseGNN — waiting on collaborator
@@ -166,23 +165,24 @@ All values are mean |Δ| (mean absolute error) as % of prescription dose (50 Gy)
 
 | Metric | U-Net Sigmoid | DoseGAN Sigmoid | DoseGAN Tanh | Fransson 2024 | Kandalan 2021 | Lempart 2021 |
 |---|---|---|---|---|---|---|
-| PTV/CTV Dmean | **0.49%** ± 0.79% | PENDING | 1.59% ± 1.42% | 0.7% (CTV) | 1.0% | — |
-| PTV D95 | **0.69%** ± 1.11% | PENDING | 1.85% ± 1.67% | 0.7% (CTV) | **0.4%** | 1.0% |
-| PTV D98 | **0.79%** ± 1.30% | PENDING | 2.01% ± 1.86% | 3.2% (PTV) | 1.6% (D2) | 1.9% |
-| Bladder Dmean | 1.65% ± 1.37% | PENDING | 1.84% ± 1.51% | **0.7%** | 1.8% | ≤ 2.6% |
-| Rectum Dmean | 2.54% ± 2.03% | PENDING | 2.59% ± 2.07% | n/r | — | ≤ 2.6% |
-| Rectum D95 | 0.59% ± 0.56% | PENDING | 0.62% ± 0.58% | — | — | — |
+| PTV/CTV Dmean | **0.49%** ± 0.79% | 0.66% ± 0.76% | 1.59% ± 1.42% | 0.7% (CTV) | 1.0% | — |
+| PTV D95 | **0.69%** ± 1.11% | 0.93% ± 0.83% | 1.85% ± 1.67% | 0.7% (CTV) | **0.4%** | 1.0% |
+| PTV D98 | **0.79%** ± 1.30% | 1.12% ± 0.96% | 2.01% ± 1.86% | 3.2% (PTV) | 1.6% (D2) | 1.9% |
+| Bladder Dmean | 1.65% ± 1.37% | 1.73% ± 1.44% | 1.84% ± 1.51% | **0.7%** | 1.8% | ≤ 2.6% |
+| Rectum Dmean | 2.54% ± 2.03% | 2.50% ± 2.04% | 2.59% ± 2.07% | n/r | — | ≤ 2.6% |
+| Rectum D95 | 0.59% ± 0.56% | 0.61% ± 0.51% | 0.62% ± 0.58% | — | — | — |
 
 **Interpretation for thesis:**
 - U-Net Sigmoid PTV metrics are competitive with or better than every prostate paper. PTV D98 (0.79%) substantially outperforms Fransson (3.2%) and Lempart (1.9%).
 - Bladder Dmean gap vs Fransson (1.65% vs 0.7%): explained by cohort heterogeneity (N=432, two acquisition eras, real-world bladder filling variability) not model weakness. Acquisition-group breakdown confirms both groups show identical bladder errors (~1.65–1.68%).
-- DoseGAN Tanh PTV metrics are within Lempart range but clearly behind U-Net. The U-Net vs DoseGAN gap holds across both acquisition groups, indicating it is architectural, not data-driven.
+- DoseGAN Sigmoid PTV metrics (Dmean 0.66%, D95 0.93%, D98 1.12%) are substantially better than DoseGAN Tanh and within the Lempart range, but trail U-Net Sigmoid. The GAN adversarial objective does not improve DVH accuracy over the plain U-Net in this setting.
+- DoseGAN Sigmoid Bladder Dmean (1.73%) is marginally worse than U-Net Sigmoid (1.65%), consistent with Inv2 showing bladder under-prediction as the dominant DoseGAN failure mode.
+- DoseGAN Sigmoid Rectum Dmean (2.50%) is essentially identical to U-Net Sigmoid (2.54%) and DoseGAN Tanh (2.59%) — rectum prediction is similarly limited across all models.
 - No prostate paper reports body-masked voxel MAE in Gy; 0.861 Gy compares favourably to Feng 2024 breast result (1.076 Gy, same metric definition).
-- DoseGAN Sigmoid DVH metrics pending — requires running DVH computation on existing eval CSVs.
 
 | # | Item | Status | Source |
 |---|------|--------|--------|
-| R23 | DVH comparison table (as above) | PARTIAL — DoseGAN Sigmoid DVH pending | `docs/literature_comparison.md` |
+| R23 | DVH comparison table (as above) | READY | `docs/literature_comparison.md`, `outputs/analysis/dvh_summary_*.csv` |
 | R24 | Bladder Dmean gap explanation (cohort heterogeneity, not model weakness) | READY | acquisition-group breakdown + Fransson N=35 context |
 | R25 | Voxel MAE benchmark vs Feng 2024 (breast): 0.861 vs 1.076 Gy | READY | `docs/literature_comparison.md` |
 
