@@ -1,6 +1,8 @@
 # training/evaluate_dosegan.py
 # Post-training evaluation of the best DoseGAN checkpoint.
-# Computes SRQ1 (MAE, RMSE), SRQ2 (DVH metrics), SRQ3 (per acquisition group).
+# Metrics: body MAE/RMSE, per-structure MAE/RMSE, DVH endpoints (incl. D01cc),
+#          boundary MAE (±20 mm PTV/OAR surface), V_prescription for OARs,
+#          gamma pass rate (3%/3mm and 2%/2mm), isodose Dice + HD95.
 #
 # Defaults to the VALIDATION split — safe to run at any time.
 # Run from the project root:
@@ -13,6 +15,7 @@ import argparse
 import csv
 import logging
 import sys
+import time
 from pathlib import Path
 
 import numpy as np
@@ -23,6 +26,15 @@ from torch.utils.data import DataLoader
 from configs import config_dosegan as cfg
 from models.dosegan import UnetGenerator3d
 from training.dataset import LUNDPROBEDataset
+from training.metrics import (
+    VOXEL_SPACING_MM,
+    compute_mae, compute_rmse,
+    dvh_endpoints,
+    compute_boundary_mae,
+    compute_gamma_passrate,
+    compute_isodose_metrics,
+    compute_D95, compute_Vx,
+)
 
 logging.basicConfig(level=logging.INFO, stream=sys.stdout)
 log = logging.getLogger(__name__)
@@ -31,65 +43,7 @@ DOSE_SCALE = 50.0   # all patients normalised to this (see preprocessing.py)
 
 
 # ---------------------------------------------------------------------------
-# Metric helpers
-# ---------------------------------------------------------------------------
-
-def body_mae_rmse(pred_gy: np.ndarray, true_gy: np.ndarray,
-                  body_mask: np.ndarray):
-    """MAE and RMSE over body-contour voxels, in Gy."""
-    mask = body_mask > 0.5
-    diff = pred_gy[mask] - true_gy[mask]
-    mae  = float(np.abs(diff).mean())
-    rmse = float(np.sqrt((diff ** 2).mean()))
-    return mae, rmse
-
-
-def dvh_metrics(pred_gy: np.ndarray, true_gy: np.ndarray,
-                struct_mask: np.ndarray) -> dict:
-    """
-    DVH metrics for one structure, comparing predicted to ground-truth dose.
-
-    Conventions
-    -----------
-    D95  = dose received by at least 95% of the structure volume
-           = 5th percentile of voxel doses (95% of voxels exceed this value)
-    D98  = dose received by at least 98% → 2nd percentile
-    Dmean, Dmax = mean and max dose inside the structure
-    V20, V40 = % of structure volume receiving ≥ 20 Gy / ≥ 40 Gy
-
-    Returns a flat dict with _pred, _true, and _diff keys for each metric.
-    """
-    m = struct_mask > 0.5
-    result = {}
-
-    if m.sum() == 0:
-        # Structure absent for this patient (e.g. Genitalia, PenileBulb)
-        for suffix in ("_pred", "_true", "_diff"):
-            for key in ("Dmean", "Dmax", "D95", "D98", "V20", "V40"):
-                result[key + suffix] = float("nan")
-        return result
-
-    for tag, dose in (("pred", pred_gy), ("true", true_gy)):
-        v = dose[m]
-        metrics = {
-            "Dmean": float(v.mean()),
-            "Dmax":  float(v.max()),
-            "D95":   float(np.percentile(v, 5)),    # 95% of voxels exceed this
-            "D98":   float(np.percentile(v, 2)),    # 98% of voxels exceed this
-            "V20":   float(100.0 * (v >= 20.0).mean()),
-            "V40":   float(100.0 * (v >= 40.0).mean()),
-        }
-        for k, val in metrics.items():
-            result[f"{k}_{tag}"] = val
-
-    for k in ("Dmean", "Dmax", "D95", "D98", "V20", "V40"):
-        result[f"{k}_diff"] = result[f"{k}_pred"] - result[f"{k}_true"]
-
-    return result
-
-
-# ---------------------------------------------------------------------------
-# Acquisition group lookup
+# Utility
 # ---------------------------------------------------------------------------
 
 def load_acq_group_map(split_csv: Path) -> dict:
@@ -101,6 +55,13 @@ def load_acq_group_map(split_csv: Path) -> dict:
     return mapping
 
 
+def _wandb_summary_stats(wandb_run, key: str, values: list) -> None:
+    clean = [v for v in values if not np.isnan(v)]
+    if clean:
+        wandb_run.summary[f"{key}_mean"] = float(np.mean(clean))
+        wandb_run.summary[f"{key}_std"]  = float(np.std(clean))
+
+
 # ---------------------------------------------------------------------------
 # Main evaluation loop
 # ---------------------------------------------------------------------------
@@ -109,10 +70,6 @@ def evaluate(fold: int, split: str) -> None:
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     log.info(f"Evaluating on: {device} | fold={fold} | split='{split}'")
 
-    # ── W&B initialisation ──────────────────────────────────────────────────
-    # Sits inside the same group as the training run that produced the
-    # checkpoint, with job_type="eval" so train and eval runs cluster
-    # together in the UI but stay distinguishable.
     wandb.init(
         project  = cfg.PROJECT_NAME,
         name     = f"{cfg.RUN_NAME}_fold{fold}_eval_{split}",
@@ -130,8 +87,7 @@ def evaluate(fold: int, split: str) -> None:
     checkpoint = torch.load(ckpt_path, map_location=device)
 
     generator = UnetGenerator3d(
-        input_nc=cfg.INPUT_NC, output_nc=cfg.OUTPUT_NC,
-        ngf=cfg.NGF,
+        input_nc=cfg.INPUT_NC, output_nc=cfg.OUTPUT_NC, ngf=cfg.NGF,
     ).to(device)
     generator.load_state_dict(checkpoint["generator"])
     generator.eval()
@@ -139,7 +95,7 @@ def evaluate(fold: int, split: str) -> None:
     log.info(
         f"Loaded checkpoint — epoch {checkpoint['epoch']} | "
         f"best_val_L1={checkpoint['best_val_loss']:.4f} "
-        f"(= {checkpoint['best_val_loss']*DOSE_SCALE:.2f} Gy body-masked MAE)"
+        f"(= {checkpoint['best_val_loss'] * DOSE_SCALE:.2f} Gy body-masked MAE)"
     )
 
     # ── Dataset ───────────────────────────────────────────────────────────────
@@ -147,12 +103,11 @@ def evaluate(fold: int, split: str) -> None:
         split_csv=cfg.SPLIT_CSV, pickle_dir=cfg.PICKLE_DIR,
         split=split, fold=fold if split != "test" else None,
     )
-    loader = DataLoader(ds, batch_size=1, shuffle=False, num_workers=0)
+    loader    = DataLoader(ds, batch_size=1, shuffle=False, num_workers=0)
+    acq_map   = load_acq_group_map(cfg.SPLIT_CSV)
     log.info(f"Patients to evaluate: {len(ds)}")
 
-    acq_map = load_acq_group_map(cfg.SPLIT_CSV)
-
-    # ── Per-patient results ───────────────────────────────────────────────────
+    # ── Per-patient loop ──────────────────────────────────────────────────────
     rows = []
 
     with torch.no_grad():
@@ -161,48 +116,104 @@ def evaluate(fold: int, split: str) -> None:
             real_input = batch["input"].to(device)   # (1, 9, D, H, W)
             real_dose  = batch["dose"].to(device)    # (1, 1, D, H, W)
 
-            pred_dose = generator(real_input)        # (1, 1, D, H, W)
+            t0        = time.perf_counter()
+            pred_dose = generator(real_input)
+            inference_ms = (time.perf_counter() - t0) * 1000
 
-            # Convert to Gy numpy arrays (D, H, W)
-            pred_gy = pred_dose[0, 0].cpu().numpy() * DOSE_SCALE
-            true_gy = real_dose[0, 0].cpu().numpy() * DOSE_SCALE
-            body    = real_input[0, 7].cpu().numpy()   # channel 7 = BODY
+            pred_gy = pred_dose[0, 0].cpu().numpy()  * DOSE_SCALE
+            true_gy = real_dose[0, 0].cpu().numpy()  * DOSE_SCALE
 
-            # Structure masks come from the Dataset (already loaded once per patient).
+            body_mask        = real_input[0, 7].cpu().numpy()   # channel 7 = BODY
             ptv_mask         = batch["ptv_mask"][0, 0].numpy()
             rectum_mask      = batch["rectum_mask"][0, 0].numpy()
             bladder_mask     = batch["bladder_mask"][0, 0].numpy()
             penile_bulb_mask = real_input[0, 6].cpu().numpy()   # channel 6 = PenileBulb
 
-            # SRQ1 — global dose accuracy
-            mae, rmse = body_mae_rmse(pred_gy, true_gy, body)
+            # ---- voxel-level ------------------------------------------------
+            body_mae  = compute_mae(pred_gy,  true_gy, body_mask)
+            body_rmse = compute_rmse(pred_gy, true_gy, body_mask)
+            ptv_mae   = compute_mae(pred_gy,  true_gy, ptv_mask)
+            ptv_rmse  = compute_rmse(pred_gy, true_gy, ptv_mask)
+            rect_mae  = compute_mae(pred_gy,  true_gy, rectum_mask)
+            rect_rmse = compute_rmse(pred_gy, true_gy, rectum_mask)
+            blad_mae  = compute_mae(pred_gy,  true_gy, bladder_mask)
+            blad_rmse = compute_rmse(pred_gy, true_gy, bladder_mask)
 
-            # SRQ2 — DVH metrics per structure
-            ptv_dvh         = dvh_metrics(pred_gy, true_gy, ptv_mask)
-            rectum_dvh      = dvh_metrics(pred_gy, true_gy, rectum_mask)
-            bladder_dvh     = dvh_metrics(pred_gy, true_gy, bladder_mask)
-            penile_bulb_dvh = dvh_metrics(pred_gy, true_gy, penile_bulb_mask)
+            # ---- DVH endpoints per structure ---------------------------------
+            ptv_dvh         = dvh_endpoints(pred_gy, true_gy, ptv_mask)
+            rectum_dvh      = dvh_endpoints(pred_gy, true_gy, rectum_mask)
+            bladder_dvh     = dvh_endpoints(pred_gy, true_gy, bladder_mask)
+            penile_bulb_dvh = dvh_endpoints(pred_gy, true_gy, penile_bulb_mask)
+
+            # ---- boundary MAE (H2 — 20 mm PTV/OAR surface) ------------------
+            bnd_ptv  = compute_boundary_mae(pred_gy, true_gy, ptv_mask)
+            bnd_rect = compute_boundary_mae(pred_gy, true_gy, rectum_mask) \
+                       if (rectum_mask > 0.5).sum() > 0 else float("nan")
+            bnd_blad = compute_boundary_mae(pred_gy, true_gy, bladder_mask) \
+                       if (bladder_mask > 0.5).sum() > 0 else float("nan")
+
+            # ---- V_prescription for OARs ------------------------------------
+            presc = compute_D95(true_gy, ptv_mask)   # patient-specific prescription dose
+            v_presc_rect_pred = compute_Vx(pred_gy, rectum_mask,  presc)
+            v_presc_rect_true = compute_Vx(true_gy, rectum_mask,  presc)
+            v_presc_blad_pred = compute_Vx(pred_gy, bladder_mask, presc)
+            v_presc_blad_true = compute_Vx(true_gy, bladder_mask, presc)
+
+            # ---- gamma pass rate --------------------------------------------
+            gamma_3_3 = compute_gamma_passrate(pred_gy, true_gy, body_mask,
+                                               dose_percent=3.0, distance_mm=3.0)
+            gamma_2_2 = compute_gamma_passrate(pred_gy, true_gy, body_mask,
+                                               dose_percent=2.0, distance_mm=2.0)
+
+            # ---- isodose Dice + HD95 ----------------------------------------
+            isodose = compute_isodose_metrics(pred_gy, true_gy, ptv_mask)
 
             row = {
-                "patient_id":       patient_id,
-                "acquisition_group": acq_map.get(patient_id, "unknown"),
-                "split":            split,
-                "fold":             fold,
-                "body_MAE_Gy":      mae,
-                "body_RMSE_Gy":     rmse,
+                "patient_id":              patient_id,
+                "acquisition_group":       acq_map.get(patient_id, "unknown"),
+                "split":                   split,
+                "fold":                    fold,
+                "inference_time_ms":       inference_ms,
+                # voxel-level
+                "body_MAE_Gy":             body_mae,
+                "body_RMSE_Gy":            body_rmse,
+                "ptv_MAE_Gy":              ptv_mae,
+                "ptv_RMSE_Gy":             ptv_rmse,
+                "rectum_MAE_Gy":           rect_mae,
+                "rectum_RMSE_Gy":          rect_rmse,
+                "bladder_MAE_Gy":          blad_mae,
+                "bladder_RMSE_Gy":         blad_rmse,
+                # DVH
                 **{f"ptv_{k}":          v for k, v in ptv_dvh.items()},
                 **{f"rectum_{k}":       v for k, v in rectum_dvh.items()},
                 **{f"bladder_{k}":      v for k, v in bladder_dvh.items()},
                 **{f"penile_bulb_{k}":  v for k, v in penile_bulb_dvh.items()},
+                # boundary MAE
+                "boundary_MAE_ptv_Gy":     bnd_ptv,
+                "boundary_MAE_rectum_Gy":  bnd_rect,
+                "boundary_MAE_bladder_Gy": bnd_blad,
+                # V_prescription
+                "V_presc_rectum_pred":     v_presc_rect_pred,
+                "V_presc_rectum_true":     v_presc_rect_true,
+                "V_presc_rectum_diff":     v_presc_rect_pred - v_presc_rect_true,
+                "V_presc_bladder_pred":    v_presc_blad_pred,
+                "V_presc_bladder_true":    v_presc_blad_true,
+                "V_presc_bladder_diff":    v_presc_blad_pred - v_presc_blad_true,
+                "prescription_dose_Gy":    float(presc),
+                # gamma
+                "gamma_3pct_3mm":          gamma_3_3,
+                "gamma_2pct_2mm":          gamma_2_2,
+                # isodose Dice + HD95
+                **isodose,
             }
             rows.append(row)
 
             log.info(
                 f"[{i+1:3d}/{len(ds)}] {patient_id} | "
-                f"MAE={mae:.3f} Gy  RMSE={rmse:.3f} Gy | "
-                f"PTV D95: pred={ptv_dvh['D95_pred']:.1f} Gy  "
-                f"true={ptv_dvh['D95_true']:.1f} Gy  "
-                f"diff={ptv_dvh['D95_diff']:+.2f} Gy"
+                f"body MAE={body_mae:.3f} Gy | "
+                f"PTV D95 diff={ptv_dvh['D95_diff']:+.2f} Gy | "
+                f"bnd MAE PTV={bnd_ptv:.3f} Gy | "
+                f"gamma 3/3={gamma_3_3:.1f}%"
             )
 
     # ── Save CSV ──────────────────────────────────────────────────────────────
@@ -214,47 +225,31 @@ def evaluate(fold: int, split: str) -> None:
         writer = csv.DictWriter(f, fieldnames=rows[0].keys())
         writer.writeheader()
         writer.writerows(rows)
-
     log.info(f"\nResults saved: {out_path}")
 
-    # ── Per-patient table to W&B (browsable in the UI) ────────────────────────
+    # ── W&B per-patient table ─────────────────────────────────────────────────
     fieldnames = list(rows[0].keys())
-    table = wandb.Table(columns=fieldnames,
-                        data=[[r[c] for c in fieldnames] for r in rows])
-    wandb.log({"per_patient": table})
+    wandb.log({"per_patient": wandb.Table(
+        columns=fieldnames, data=[[r[c] for c in fieldnames] for r in rows]
+    )})
 
-    # ── Summary table ─────────────────────────────────────────────────────────
-    maes  = [r["body_MAE_Gy"]  for r in rows]
-    rmses = [r["body_RMSE_Gy"] for r in rows]
+    # ── Summary logging + W&B summary ────────────────────────────────────────
+    log.info("\n── Overall (" + split + ") ───────────────────────────────────")
 
-    log.info("\n── Overall (" + split + ") ───────────────────────────────")
-    log.info(f"  body MAE  : {np.mean(maes):.3f} ± {np.std(maes):.3f} Gy")
-    log.info(f"  body RMSE : {np.mean(rmses):.3f} ± {np.std(rmses):.3f} Gy")
+    for key, label in [
+        ("body_MAE_Gy",  "body MAE  "),
+        ("body_RMSE_Gy", "body RMSE "),
+        ("ptv_MAE_Gy",   "PTV  MAE  "),
+        ("gamma_3pct_3mm", "gamma 3/3 "),
+        ("gamma_2pct_2mm", "gamma 2/2 "),
+        ("boundary_MAE_ptv_Gy", "bnd MAE PTV"),
+    ]:
+        vals = [r[key] for r in rows]
+        log.info(f"  {label}: {np.nanmean(vals):.3f} ± {np.nanstd(vals):.3f}")
+        _wandb_summary_stats(wandb, key, vals)
 
-    wandb.summary["body_MAE_Gy_mean"]  = float(np.mean(maes))
-    wandb.summary["body_MAE_Gy_std"]   = float(np.std(maes))
-    wandb.summary["body_RMSE_Gy_mean"] = float(np.mean(rmses))
-    wandb.summary["body_RMSE_Gy_std"]  = float(np.std(rmses))
-    wandb.summary["n_patients"]        = len(rows)
-
-    # SRQ3 — breakdown by acquisition group
-    for grp in ("oldAcq", "newAcq"):
-        grp_rows = [r for r in rows if r["acquisition_group"] == grp]
-        if not grp_rows:
-            continue
-        g_maes  = [r["body_MAE_Gy"]  for r in grp_rows]
-        g_rmses = [r["body_RMSE_Gy"] for r in grp_rows]
-        log.info(f"\n── {grp} (n={len(grp_rows)}) ───────────────────────────")
-        log.info(f"  body MAE  : {np.mean(g_maes):.3f} ± {np.std(g_maes):.3f} Gy")
-        log.info(f"  body RMSE : {np.mean(g_rmses):.3f} ± {np.std(g_rmses):.3f} Gy")
-
-        wandb.summary[f"body_MAE_Gy_mean_{grp}"] = float(np.mean(g_maes))
-        wandb.summary[f"body_MAE_Gy_std_{grp}"]  = float(np.std(g_maes))
-        wandb.summary[f"n_patients_{grp}"]       = len(grp_rows)
-
-    # DVH summary for PTV (most clinically important)
-    log.info("\n── PTV DVH (mean across patients) ───────────────────────")
-    for metric in ("D95", "D98", "Dmean", "Dmax"):
+    log.info("\n── PTV DVH (mean across patients) ───────────────────────────")
+    for metric in ("D95", "D98", "Dmean", "Dmax", "D01cc"):
         pred_vals = [r[f"ptv_{metric}_pred"] for r in rows]
         true_vals = [r[f"ptv_{metric}_true"] for r in rows]
         diff_vals = [r[f"ptv_{metric}_diff"] for r in rows]
@@ -263,11 +258,32 @@ def evaluate(fold: int, split: str) -> None:
             f"true={np.nanmean(true_vals):.2f} Gy  "
             f"diff={np.nanmean(diff_vals):+.2f} ± {np.nanstd(diff_vals):.2f} Gy"
         )
+        _wandb_summary_stats(wandb, f"ptv_{metric}_diff", diff_vals)
 
-        wandb.summary[f"ptv_{metric}_diff_mean"] = float(np.nanmean(diff_vals))
-        wandb.summary[f"ptv_{metric}_diff_std"]  = float(np.nanstd(diff_vals))
+    log.info("\n── Isodose conformality (mean across patients) ───────────────")
+    for level in ("100iso", "95iso", "80iso", "50iso"):
+        dice_vals = [r.get(f"Dice_{level}", float("nan")) for r in rows]
+        hd95_vals = [r.get(f"HD95_{level}_mm", float("nan")) for r in rows]
+        log.info(
+            f"  {level}: Dice={np.nanmean(dice_vals):.3f} ± {np.nanstd(dice_vals):.3f}  "
+            f"HD95={np.nanmean(hd95_vals):.1f} ± {np.nanstd(hd95_vals):.1f} mm"
+        )
+        _wandb_summary_stats(wandb, f"Dice_{level}", dice_vals)
+        _wandb_summary_stats(wandb, f"HD95_{level}_mm", hd95_vals)
 
-    # Stash the CSV as a run artifact for reproducibility
+    # Acquisition-group breakdown
+    for grp in ("oldAcq", "newAcq"):
+        grp_rows = [r for r in rows if r["acquisition_group"] == grp]
+        if not grp_rows:
+            continue
+        g_maes = [r["body_MAE_Gy"] for r in grp_rows]
+        log.info(f"\n── {grp} (n={len(grp_rows)}) ────────────────────────────────")
+        log.info(f"  body MAE: {np.mean(g_maes):.3f} ± {np.std(g_maes):.3f} Gy")
+        wandb.summary[f"body_MAE_Gy_mean_{grp}"] = float(np.mean(g_maes))
+        wandb.summary[f"body_MAE_Gy_std_{grp}"]  = float(np.std(g_maes))
+        wandb.summary[f"n_patients_{grp}"]        = len(grp_rows)
+
+    wandb.summary["n_patients"] = len(rows)
     wandb.save(str(out_path), policy="now")
     wandb.finish()
 
@@ -276,10 +292,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description="Evaluate DoseGAN on the validation split."
     )
-    parser.add_argument(
-        "--fold", type=int, default=cfg.FOLD,
-        help="Which fold's checkpoint to load (default: cfg.FOLD)"
-    )
+    parser.add_argument("--fold", type=int, default=cfg.FOLD,
+                        help="Which fold's checkpoint to load (default: cfg.FOLD)")
     args = parser.parse_args()
-
     evaluate(fold=args.fold, split="val")

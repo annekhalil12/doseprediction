@@ -133,6 +133,15 @@ Per patient: resample to 1.5 mm isotropic → z-score sCT inside body contour �
 
 W&B project: `doseprediction-lundprobe`. All runs use `group=cfg.RUN_NAME` so the 5 folds of one experiment collapse into a single row. `job_type` distinguishes `train` from `eval`. Evaluation results (per-patient body MAE/RMSE + DVH metrics per structure) are logged both to per-fold CSVs (`outputs/evaluation/<run_name>_fold<F>_val.csv`) and as W&B Tables.
 
-## Geometric channels
+## Evaluation metrics
 
-Channels 8–14 in `configs/config_preprocessing_shared.py` (distance maps, angles, radiological depth) are not yet implemented — waiting on `V5geometric_channels.py` from a collaborator. All pickles currently set `geometric_channels_pending=True`; models use channels 0–7 (structure masks) + channel 15 (sCT) = 9 channels total.
+`training/metrics.py` provides the full clinical evaluation suite used by both eval scripts:
+
+| Category | Metrics |
+|---|---|
+| Voxel-level | MAE and RMSE over body, PTV, Rectum, Bladder |
+| DVH endpoints | Dmean, Dmax, D95, D98, D01cc, V20, V40 per structure |
+| Boundary MAE | MAE in ±20 mm band around PTV/OAR surface (tests steep dose falloff) |
+| V prescription | % of OAR volume receiving ≥ patient-specific prescription dose |
+| Gamma pass rate | 3%/3 mm and 2%/2 mm (3D, body-masked, 10% low-dose cut-off) |
+| Isodose conformality | Dice + HD95 at 100%, 95%, 80%, 50% isodose levels |

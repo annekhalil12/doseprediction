@@ -12,7 +12,7 @@ CKPT_DIR   = Path("outputs/checkpoints_unet3d")
 
 # ── Experiment identity ────────────────────────────────────────────────────
 PROJECT_NAME = "doseprediction-lundprobe"
-RUN_NAME     = "unet3d_ch32_sigmoid_grad_snellius"   # fold number appended at runtime; activation token rewritten by --activation
+RUN_NAME     = "unet3d_ch32_sigmoid_grad1.0_snellius"   # fold number appended at runtime; activation token rewritten by --activation
 
 # ── Cross-validation ───────────────────────────────────────────────────────
 FOLD = 0
@@ -37,5 +37,5 @@ BETA2 = 0.999
 
 # ── Loss ───────────────────────────────────────────────────────────────────
 LAMBDA_DVH          = 0.1  # weight for structure-Dmean DVH regularisation loss
-LAMBDA_GRAD         = 10.0 # weight for gradient-magnitude loss (dose falloff sharpness)
+LAMBDA_GRAD         = 1.0  # weight for gradient-magnitude loss (dose falloff sharpness)
 EARLY_STOP_PATIENCE = 15   # stop if val_dvh_score does not improve for this many epochs

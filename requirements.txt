@@ -21,6 +21,9 @@ seaborn==0.13.2
 # Experiment tracking
 wandb==0.26.1
 
+# Medical physics
+pymedphys==0.40.0
+
 # Utilities
 tqdm==4.67.3
 pillow==11.3.0

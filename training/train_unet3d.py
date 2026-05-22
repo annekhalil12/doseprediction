@@ -29,14 +29,32 @@ def masked_l1(pred, target, mask):
 
 
 def structure_dmean_loss(pred, target, mask):
-    """MAE of mean dose inside a structure. Safe for absent structures (contributes 0)."""
-    m = (mask > 0.5).float()
-    n = m.sum(dim=(2, 3, 4), keepdim=True).clamp(min=1)
-    pred_mean   = (pred * m).sum(dim=(2, 3, 4), keepdim=True) / n
-    target_mean = (target * m).sum(dim=(2, 3, 4), keepdim=True) / n
-    absent = (mask > 0.5).float().sum(dim=(2, 3, 4)) == 0
-    loss = torch.abs(pred_mean - target_mean).squeeze()
-    return loss[~absent].mean() if (~absent).any() else pred.sum() * 0.0
+    """MAE of mean dose inside a structure. Safe for absent structures (contributes 0).
+
+    Computed via a present-weighted mean (no boolean indexing, no .view/.squeeze)
+    so it is robust to:
+      * batch size 1 (no scalar collapse)
+      * any/all structures absent in the batch (returns a 0.0 with grad through pred)
+      * MONAI MetaTensor inputs (every op is a standard torch reduction)
+    """
+    spatial = tuple(range(2, mask.ndim))                       # (2, 3, 4) for (B,1,D,H,W)
+    sample_dims = tuple(range(1, mask.ndim))                   # (1, 2, 3, 4)
+
+    m = (mask > 0.5).to(pred.dtype)                            # (B, 1, D, H, W)
+    n = m.sum(dim=spatial)                                     # (B, 1) voxels per sample
+    n_safe = n.clamp(min=1.0)                                  # avoid /0 for absent structures
+
+    pred_mean   = (pred   * m).sum(dim=spatial) / n_safe       # (B, 1)
+    target_mean = (target * m).sum(dim=spatial) / n_safe       # (B, 1)
+    per_sample  = torch.abs(pred_mean - target_mean)           # (B, 1)
+
+    # Present = 1.0 if this sample has any voxels in the structure, else 0.0.
+    present = (m.sum(dim=sample_dims) > 0).to(per_sample.dtype)  # (B,)
+    # Broadcast (B,) -> (B, 1) so the mask aligns with per_sample.
+    present_b = present.view(-1, *([1] * (per_sample.ndim - 1)))
+
+    denom = present.sum().clamp(min=1.0)                       # scalar; 1.0 floor only kicks in when all absent
+    return (per_sample * present_b).sum() / denom
 
 
 def gradient_magnitude_loss(pred: torch.Tensor, target: torch.Tensor) -> torch.Tensor:

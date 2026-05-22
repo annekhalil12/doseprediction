@@ -2,7 +2,7 @@
 
 Working document. Update as runs complete and sections are drafted.
 
-Last updated: 2026-05-20
+Last updated: 2026-05-22
 
 ---
 
@@ -17,23 +17,25 @@ Last updated: 2026-05-20
 - [x] Investigation 1 (acquisition group breakdown) — U-Net Sigmoid + DoseGAN Sigmoid
 - [x] Investigation 2 (worst-case patient visualisations) — U-Net Sigmoid + DoseGAN Sigmoid
 - [x] Investigation 3 (dose-smearing index) — code exists, run on DoseGAN Tanh only
-- [x] Literature comparison table finalised — full-text details extracted for all 11 papers; Kandalan 2021 and Lempart 2021 added to Zotero and notes completed
-- [x] DVH comparison with literature — per-metric absolute errors (% Rx) computed and benchmarked against Fransson 2024, Kandalan 2021, Lempart 2021 (see Section 3.5)
-- [x] DVH acquisition-group breakdown — newAcq vs oldAcq for all DVH metrics; finding: errors comparable across groups at DVH level (see Section 3.3)
-- [x] Penile Bulb evaluation added to both eval scripts (extracted from input channel 6; NaN for ~48 absent patients — handled automatically by dvh_metrics)
-- [x] DVH regularisation loss implemented in both training scripts — `structure_dmean_loss(PTV + Bladder + Rectum)`, weighted by LAMBDA_DVH (5.0 for DoseGAN, 0.1 for U-Net)
-- [x] DVH early stopping implemented in both training scripts — monitors `val_dvh_score = mean|Δ PTV D95| + mean|Δ Bladder Dmean| + mean|Δ Rectum Dmean|` in Gy instead of body-masked L1
+- [x] Literature comparison table finalised — full-text details extracted for all 11 papers
+- [x] DVH comparison with literature — benchmarked against Fransson 2024, Kandalan 2021, Lempart 2021 (see Section 3.5)
+- [x] DVH acquisition-group breakdown — newAcq vs oldAcq; finding: errors comparable across groups at DVH level
+- [x] Penile Bulb evaluation added to both eval scripts
+- [x] DVH regularisation loss implemented — `structure_dmean_loss(PTV + Bladder + Rectum)`, LAMBDA_DVH (5.0 DoseGAN, 0.1 U-Net)
+- [x] DVH early stopping implemented — monitors `val_dvh_score = mean|Δ PTV D95| + mean|Δ Bladder Dmean| + mean|Δ Rectum Dmean|` in Gy
+- [x] Gradient-magnitude loss implemented (MAE on per-axis finite differences). LAMBDA_GRAD=10.0 was worse than baseline; lowered to 1.0
+- [x] Full clinical evaluation suite implemented — `training/metrics.py`: boundary MAE (±20 mm), gamma pass rate (3%/3mm + 2%/2mm), isodose Dice + HD95, D01cc, V_prescription, structure-level MAE/RMSE. Both eval scripts updated.
+- [x] **Scope decision (2026-05-22): thesis is a 2-model comparison (U-Net vs DoseGAN). DoseGNN and geometric channels are out of scope.**
 
 ### Pending
-- [ ] Investigation 3 at scale across all 4 model variants
-- [ ] DVH curve comparison (not yet implemented)
-- [ ] Gamma analysis (not yet implemented)
-- [ ] Test-set evaluation for all final models (val set only so far)
-- [ ] DoseGNN results (collaborator)
+- [ ] Gradient-loss fold 0 result with LAMBDA_GRAD=1.0 (jobs 23059382, 23059383 running)
+- [ ] Run full evaluation with new metric suite on baseline 5-fold checkpoints (U-Net Sigmoid + DoseGAN Sigmoid)
+- [ ] Investigation 3 at scale — both baseline models
+- [ ] Test-set evaluation for final models
 
 ### Blocked
-- DoseGNN — waiting on collaborator
-- Geometric channels 8–14 — waiting on V5geometric_channels.py (not blocking thesis if scoped to 9-channel input)
+- ~~DoseGNN~~ — dropped from scope (2026-05-22)
+- ~~Geometric channels 8–14~~ — dropped from scope (2026-05-22)
 
 ---
 
@@ -51,11 +53,12 @@ Last updated: 2026-05-20
 | M8 | Footnote: AttGate ties weights between down_inp and sample_inp (inherited from upstream) | READY | `models/dosegan.py` |
 | M9 | Footnote: BatchNorm3d with batch_size=1 (memory constraint standard in 3D medical imaging) | READY | `training/train_*.py` |
 | M10 | Training: Adam optimiser, LR 2e-4, 100 epochs + early stopping (patience 15), augmentation (LR flip, depth flip, sCT intensity scale/shift) | READY | `configs/config_dosegan.py`, `training/dataset.py` |
-| M11 | Metrics: body_MAE_Gy, body_RMSE_Gy computed over body-contour voxels (channel 7); same mask used during training for val_L1 | READY | `training/evaluate_*.py` |
+| M11 | Metrics: body_MAE_Gy, body_RMSE_Gy computed over body-contour voxels (channel 7); same mask used during training for val_L1 | READY | `training/metrics.py`, `training/evaluate_*.py` |
 | M12 | Note: val_L1 redefined 2026-05-13 — pre-change values not comparable (conversion: new ≈ old / 0.32) | READY | commit a2c5cc7 |
 | M13 | Hardware and runtime: Snellius HPC, NVIDIA H100, wallclock per fold | READY | `outputs/logs/` |
-| M14 | DVH and gamma analysis | OPTIONAL / PENDING | Not yet implemented |
-| M15 | Investigation 3 metric: ratio of predicted to ground-truth dose gradient magnitude per patient | OPTIONAL | code exists, not yet run at scale |
+| M14 | Full clinical evaluation suite: boundary MAE (±20 mm PTV/OAR surface), gamma pass rate (3%/3mm + 2%/2mm), isodose Dice + HD95 (100/95/80/50%), D01cc, V_prescription for OARs | IMPLEMENTED | `training/metrics.py` |
+| M15 | Investigation 3 metric: dose-smearing index (ratio of predicted to ground-truth dose gradient magnitude per patient) | READY — code exists, not yet run at scale | `analysis/inv3_dose_smearing_index.py` |
+| M19 | Gradient-magnitude loss: MAE on per-axis finite differences (dx, dy, dz), averaged across 3 directions, LAMBDA_GRAD=1.0 | IMPLEMENTED — fold 0 running | `training/train_dosegan.py`, `training/train_unet3d.py` |
 | M16 | DVH regularisation loss: `structure_dmean_loss(PTV) + structure_dmean_loss(Bladder) + structure_dmean_loss(Rectum)`, weighted λ_dvh (5.0 DoseGAN, 0.1 U-Net) — added to generator loss; from Kearney et al. 2020 | IMPLEMENTED — applies to next re-train | `training/train_dosegan.py`, `training/train_unet3d.py` |
 | M17 | DVH early stopping: model saved when `val_dvh_score = mean|Δ PTV D95| + mean|Δ Bladder Dmean| + mean|Δ Rectum Dmean|` (Gy) improves, not when body-masked L1 improves | IMPLEMENTED — applies to next re-train | `training/train_dosegan.py`, `training/train_unet3d.py` |
 | M18 | Penile Bulb evaluation: Dmean, Dmax, D95, D98, V20, V40 added to per-patient eval CSV; extracted from input channel 6; NaN for ~48 absent patients | IMPLEMENTED — applies on next evaluation run | `training/evaluate_dosegan.py`, `training/evaluate_unet3d.py` |
@@ -68,10 +71,10 @@ Last updated: 2026-05-20
 
 | # | Item | Status | Source |
 |---|------|--------|--------|
-| R1 | Table: body_MAE_Gy and body_RMSE_Gy per model, mean ± std across 5 folds | PARTIAL — DoseGNN pending | `outputs/evaluation/*_fold*_val.csv` |
+| R1 | Table: body_MAE_Gy and body_RMSE_Gy per model, mean ± std across 5 folds | PARTIAL — full eval with new metrics pending | `outputs/evaluation/*_fold*_val.csv` |
 | R2 | U-Net Sigmoid: body_MAE_Gy = 0.861 ± 0.026 Gy; body_RMSE_Gy = 1.514 ± 0.038 Gy | READY | `outputs/evaluation/unet3d_ch32_sigmoid_snellius_fold*_val.csv` |
 | R3 | DoseGAN Sigmoid: body_MAE_Gy = 0.868 ± 0.035 Gy; body_RMSE_Gy = 1.521 ± 0.045 Gy | READY | `outputs/evaluation/dosegan_ngf32_sigmoid_snellius_fold*_val.csv` |
-| R4 | DoseGNN: body_MAE_Gy + body_RMSE_Gy | PENDING collaborator | — |
+| R4 | ~~DoseGNN results~~ | DROPPED — out of scope (2026-05-22) | — |
 | R5 | Test-set results for all final models | PENDING | requires test-split eval |
 
 ### 3.2 Activation ablation (2×2)
@@ -199,8 +202,8 @@ All values are mean |Δ| (mean absolute error) as % of prescription dose (50 Gy)
 
 | # | Item | Status | Source |
 |---|------|--------|--------|
-| R21 | DVH curves per OAR and PTV | OPTIONAL / PENDING | Not implemented |
-| R22 | Gamma pass rate (3%/3 mm, 2%/2 mm) | OPTIONAL / PENDING | Not implemented |
+| R21 | DVH curves per OAR and PTV | OPTIONAL | Not implemented — low priority |
+| R22 | Gamma pass rate (3%/3 mm, 2%/2 mm) + isodose Dice/HD95 + boundary MAE | IMPLEMENTED — needs eval run on checkpoints | `training/metrics.py`, `training/evaluate_*.py` |
 
 ---
 
@@ -208,12 +211,13 @@ All values are mean |Δ| (mean absolute error) as % of prescription dose (50 Gy)
 
 | # | Item | Status | Source |
 |---|------|--------|--------|
-| D1 | Headline result: which model achieves lowest body_MAE/RMSE and by how much | PARTIAL — DoseGNN pending; U-Net Sigmoid (0.861 Gy) marginally better than DoseGAN Sigmoid (0.868 Gy) | R1–R3 |
+| D1 | Headline result: which model achieves lowest body_MAE/RMSE and by how much | READY — U-Net Sigmoid (0.861 Gy) marginally better than DoseGAN Sigmoid (0.868 Gy); GAN discriminator does not improve over plain U-Net | R1–R3 |
 | D2 | Activation finding: Sigmoid consistently outperforms Tanh; range match to normalised [0,1] dose target; small deviation from Kearney et al. | READY | Section 5 |
 | D3 | Acquisition group shift: oldAcq patients drive the error tail; implications for transfer to pancreatic cohort (Phase 2) | READY | R10–R14 |
 | D4 | Failure modes (DoseGAN Sigmoid): bladder under-prediction is the dominant systematic failure; dose blurring (gradient smoothing) is the dominant spatial pattern; lateral asymmetry is a secondary failure in atypical anatomy cases | READY | R17–R18 |
 | D5 | Dose-smearing index: if R19 is run, provides a quantitative characterisation of the dominant failure mode | OPTIONAL | R19–R20 |
-| D6 | Limitations: val-set-only metrics, no DVH/gamma, single dataset (Phase 1), batch_size=1 with BatchNorm3d, geometric channels 8–14 not implemented | READY | — |
+| D6 | Limitations: val-set-only metrics until test-set eval, single dataset (prostate only), batch_size=1 with BatchNorm3d, no DoseGNN comparison (collaboration ended), geometric channels not implemented | READY | — |
+| D11 | Scope reduction: DoseGNN dropped because collaborator stopped development; geometric channels showed no benefit in collaborator's experiments. Honest reflection required. | READY to write | — |
 | D7 | Reflection: dose-smearing should be addressed at the loss level; DVH regularisation loss now implemented (M16); γ-pass-rate loss remains future work | READY | M16 |
 | D8 | Inherited architectural quirks: PatchGAN tail BatchNorm+LeakyReLU, AttGate weight-tying — flagged as inherited, not corrected | READY | M7–M8 |
 | D9 | Comparison with prior literature — DVH table + acquisition-group breakdown added 2026-05-18 | READY | `docs/literature_comparison.md`, Section 3.5 |
@@ -261,14 +265,28 @@ Draft methods footnote:
 
 ## 6. Next Steps (priority order)
 
-1. Compute DVH metrics for DoseGAN Sigmoid to fill in Section 3.5 table (run DVH script on existing `outputs/evaluation/dosegan_ngf32_sigmoid_snellius_fold*_val.csv`).
-2. Run Investigation 3 at scale across all 4 model variants.
-3. Implement test-set evaluation for final models.
-4. (Optional) Re-train with DVH loss + DVH early stopping (M16–M17) to quantify improvement. Note: current DoseGAN Sigmoid and U-Net Sigmoid runs are valid baselines without these.
-5. (Stretch) Implement full DVH curves and gamma pass rate.
-6. Draft Methods using M1–M18 as checklist.
-7. Draft Results using R1–R25 as checklist.
-8. Draft Discussion using D1–D10 as checklist; prioritise D2, D3, D4, D9.
+**Thesis scope: U-Net vs DoseGAN only. Start writing now — 60–70% of the thesis is writable today.**
+
+### Experiments (in order — do not start new ones)
+1. **Check grad1.0 fold 0 result** (jobs 23059382, 23059383). If val_L1 ≤ baseline → submit folds 1–4. If not → document as negative result and move on.
+2. **Run full evaluation on baseline 5-fold checkpoints** using updated eval scripts (new metrics: gamma, boundary MAE, isodose Dice, D01cc). `sbatch eval_dosegan.sbatch` + `sbatch eval_unet3d.sbatch`.
+3. **Run Inv3 at scale** on U-Net Sigmoid + DoseGAN Sigmoid: `python3 analysis/inv3_dose_smearing_index.py`
+4. **Test-set evaluation** once all training decisions are locked.
+
+### Writing (start immediately — no experiments needed)
+- Introduction: thesis scope, motivation, 5 RQs
+- Background: U-Net, attention gates, GANs, dose prediction literature, GhTara
+- Dataset: LUND-PROBE, 432 patients, acquisition groups, split rationale
+- Preprocessing: M1–M3
+- Methods — Architectures: M4–M9
+- Methods — Training: M10, M16, M17, M19
+- Methods — Evaluation: M11–M15, M19
+- Limitations (partial): D6, D11
+
+### Writing (needs eval results first)
+- Results 3.1 (main table): R1–R3, R22 (after eval run)
+- Results 3.6 (dose-smearing): R19–R20 (after Inv3)
+- Discussion D1, D5
 
 ---
 
