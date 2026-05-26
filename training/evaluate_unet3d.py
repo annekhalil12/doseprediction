@@ -38,7 +38,7 @@ logging.basicConfig(level=logging.INFO, stream=sys.stdout)
 log = logging.getLogger(__name__)
 
 
-def evaluate(fold: int, split: str) -> None:
+def evaluate(fold: int, split: str, skip_gamma: bool = False) -> None:
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     log.info(f"Evaluating on: {device} | fold={fold} | split='{split}'")
 
@@ -260,10 +260,16 @@ if __name__ == "__main__":
                         help="Which fold's checkpoint to load (default: cfg.FOLD)")
     parser.add_argument("--activation", choices=["sigmoid", "tanh"], default=None,
                         help="Override cfg.OUTPUT_ACTIVATION.")
+    parser.add_argument("--run-name", dest="run_name", type=str, default=None,
+                        help="Override cfg.RUN_NAME, e.g. to evaluate a non-default checkpoint.")
+    parser.add_argument("--skip-gamma", dest="skip_gamma", action="store_true",
+                        help="Skip gamma pass rate (expensive 3D computation).")
     args = parser.parse_args()
 
     if args.activation is not None:
-        cfg.RUN_NAME       = cfg.RUN_NAME.replace(cfg.OUTPUT_ACTIVATION, args.activation)
+        cfg.RUN_NAME          = cfg.RUN_NAME.replace(cfg.OUTPUT_ACTIVATION, args.activation)
         cfg.OUTPUT_ACTIVATION = args.activation
+    if args.run_name is not None:
+        cfg.RUN_NAME = args.run_name
 
-    evaluate(fold=args.fold, split="val")
+    evaluate(fold=args.fold, split="val", skip_gamma=args.skip_gamma)

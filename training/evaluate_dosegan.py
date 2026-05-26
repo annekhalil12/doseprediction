@@ -66,7 +66,7 @@ def _wandb_summary_stats(wandb_run, key: str, values: list) -> None:
 # Main evaluation loop
 # ---------------------------------------------------------------------------
 
-def evaluate(fold: int, split: str) -> None:
+def evaluate(fold: int, split: str, skip_gamma: bool = False) -> None:
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     log.info(f"Evaluating on: {device} | fold={fold} | split='{split}'")
 
@@ -160,10 +160,14 @@ def evaluate(fold: int, split: str) -> None:
             v_presc_blad_true = compute_Vx(true_gy, bladder_mask, presc)
 
             # ---- gamma pass rate --------------------------------------------
-            gamma_3_3 = compute_gamma_passrate(pred_gy, true_gy, body_mask,
-                                               dose_percent=3.0, distance_mm=3.0)
-            gamma_2_2 = compute_gamma_passrate(pred_gy, true_gy, body_mask,
-                                               dose_percent=2.0, distance_mm=2.0)
+            if skip_gamma:
+                gamma_3_3 = float("nan")
+                gamma_2_2 = float("nan")
+            else:
+                gamma_3_3 = compute_gamma_passrate(pred_gy, true_gy, body_mask,
+                                                   dose_percent=3.0, distance_mm=3.0)
+                gamma_2_2 = compute_gamma_passrate(pred_gy, true_gy, body_mask,
+                                                   dose_percent=2.0, distance_mm=2.0)
 
             # ---- isodose Dice + HD95 ----------------------------------------
             isodose = compute_isodose_metrics(pred_gy, true_gy, ptv_mask)
@@ -294,5 +298,11 @@ if __name__ == "__main__":
     )
     parser.add_argument("--fold", type=int, default=cfg.FOLD,
                         help="Which fold's checkpoint to load (default: cfg.FOLD)")
+    parser.add_argument("--run-name", dest="run_name", type=str, default=None,
+                        help="Override cfg.RUN_NAME, e.g. to evaluate a non-default checkpoint.")
+    parser.add_argument("--skip-gamma", dest="skip_gamma", action="store_true",
+                        help="Skip gamma pass rate (expensive 3D computation).")
     args = parser.parse_args()
-    evaluate(fold=args.fold, split="val")
+    if args.run_name is not None:
+        cfg.RUN_NAME = args.run_name
+    evaluate(fold=args.fold, split="val", skip_gamma=args.skip_gamma)

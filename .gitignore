@@ -30,7 +30,10 @@ outputs/analysis/
 docs/*
 !docs/thesis_reporting_tracker.md
 !docs/literature_comparison.md
+thesis_template
 CLAUDE.md
+.claude/
+*.zip
 
 # W&B
 wandb/
