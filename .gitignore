@@ -41,6 +41,7 @@ CLAUDE.md
 # W&B
 wandb/
 
-# SLURM logs at root level
+# SLURM — logs and job scripts are cluster-specific, not part of the codebase
 *.out
 *.err
+*.sbatch
