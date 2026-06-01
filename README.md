@@ -1,33 +1,77 @@
 # 3D Dose Prediction for Prostate Radiotherapy (LUND-PROBE)
 
-3D dose prediction using a GAN (DoseGAN) and a U-Net baseline, trained on the LUND-PROBE prostate cohort (432 patients, NIfTI format). Phase 1 of an MSc thesis benchmarking deep dose-prediction architectures and analysing their behaviour under distribution shift.
+MSc thesis benchmark comparing 3D U-Net and DoseGAN for MR-guided prostate dose prediction, with and without explicit geometric input encoding. Dataset: LUND-PROBE cohort (432 patients, NIfTI format), Snellius HPC (SURF).
 
-## Input / output
+**Main research question:** To what extent does explicit geometric input encoding improve 3D dose prediction accuracy in prostate MR-guided radiotherapy, and does this effect generalise across a supervised regression model (U-Net) and an adversarial model (DoseGAN)?
 
-Each patient is preprocessed to a 9-channel `(9, 128, 256, 320)` float32 input tensor (8 binary structure masks + sCT intensity) and a `(1, 128, 256, 320)` target dose volume normalised by 50 Gy.
+## Sub-questions and metrics
 
-| Channel | Content |
+| SRQ | Question | Metrics |
+|---|---|---|
+| SRQ 1 | How do U-Net and DoseGAN compare under a shared evaluation framework? | MAE_body, RMSE_body, boundary_MAE (PTV / Rectum / Bladder) — 5-fold mean ± std |
+| SRQ 2 | Does adding geometric input channels improve dose prediction accuracy? | Same metrics, with vs without geom channels, per model; boundary vs global improvement ratio |
+| SRQ 3 | Do predicted doses satisfy clinically relevant DVH criteria? | D95_err, Dmean_err, D0.1cc_err for PTV; D0.1cc_err for Rectum and Bladder |
+
+## Input conditions
+
+### Baseline — 9 channels `(9, 128, 256, 320)`
+
+| Ch | Content |
 |---|---|
-| 0 | PTV (PTVT_427) |
-| 1 | Rectum |
-| 2 | Bladder |
-| 3 | Femoral Head L |
-| 4 | Femoral Head R |
-| 5 | Genitalia |
-| 6 | Penile Bulb |
-| 7 | BODY contour |
-| 8 | sCT intensity (z-scored inside body) |
+| 0 | PTV (PTVT_427) binary mask |
+| 1 | Rectum binary mask |
+| 2 | Bladder binary mask |
+| 3 | Femoral Head L binary mask |
+| 4 | Femoral Head R binary mask |
+| 5 | Genitalia binary mask (zeros if absent) |
+| 6 | Penile Bulb binary mask (zeros if absent) |
+| 7 | BODY contour binary mask |
+| 8 | sCT intensity (z-scored inside body, HU window −990–2000) |
+
+### With geometric channels — 14 channels `(14, 128, 256, 320)`
+
+Channels 0–8 as above, plus:
+
+| Ch | Content |
+|---|---|
+| 9  | dist_to_ptv_surface — Euclidean distance to nearest PTV boundary voxel, normalised [0,1] |
+| 10 | dist_to_body_surface — Euclidean distance to nearest skin surface, normalised [0,1] |
+| 11 | dir_z_shifted — sup/inf unit direction from PTV centroid, shifted to [0,1] |
+| 12 | dir_y_shifted — ant/post unit direction from PTV centroid, shifted to [0,1] |
+| 13 | dir_x_shifted — left/right unit direction from PTV centroid, shifted to [0,1] |
+
+Geometric channels are computed once from the existing pickles by `preprocessing/add_geom_channels.py` and stored in each pickle under `geom_channels`. The dataset's `use_geom_channels=True` flag appends them at load time.
+
+## Experiment status
+
+### Baseline (9-channel, no geom) — complete
+| Model | body_MAE_Gy | body_RMSE_Gy | W&B group |
+|---|---|---|---|
+| U-Net Sigmoid | **0.861 ± 0.026** | **1.514 ± 0.038** | `unet3d_ch32_sigmoid_snellius` |
+| DoseGAN Sigmoid | 0.868 ± 0.035 | 1.521 ± 0.045 | `dosegan_ngf32_sigmoid_snellius` |
+
+Both trained with Sigmoid activation, LSGAN, 5-fold CV. Folds 0–4 complete.
+
+### Ablations — complete (all negative results)
+| Ablation | Finding |
+|---|---|
+| Sigmoid vs Tanh (2×2) | Sigmoid wins every fold for both models (~4% lower MAE) |
+| Gradient-magnitude loss λ=1.0 (fold 0) | No improvement for U-Net; +4.6% worse for DoseGAN |
+| BCE vs LSGAN (DoseGAN fold 0) | BCE val_L1=0.0195 vs LSGAN 0.0174 — worse |
+
+### With-geom (14-channel) — in progress
+Pickle augmentation running. Training (10 jobs: 5 folds × 2 models) to be submitted once pickles are ready.
 
 ## Environment
 
-Tested on Snellius HPC (SURF), Python 3.9, CUDA 12.1, single H100. Packages installed to `~/.local/lib/python3.9/` (the `venv/` in the repo is a Windows artefact).
+Snellius HPC (SURF), Python 3.9, CUDA 12.1, H100 GPU. Packages installed to `~/.local/lib/python3.9/` (the `venv/` in the repo is a Windows artefact).
 
 ```bash
-pip install -r requirements.txt --index-url https://download.pytorch.org/whl/cu121  # for torch
-pip install -r requirements.txt  # for everything else
+pip install -r requirements.txt --index-url https://download.pytorch.org/whl/cu121  # torch
+pip install -r requirements.txt  # everything else
 ```
 
-Scripts run from the project root with `PYTHONPATH` set:
+Always run from the project root with `PYTHONPATH` set:
 
 ```bash
 export PYTHONPATH=/gpfs/scratch1/shared/akhalil/data/thesis-doseprediction
@@ -37,33 +81,28 @@ python3 <script>
 ## Common commands
 
 ```bash
-# Sanity-check preprocessing on one patient
-python3 preprocessing/test_single_patient.py
+# ── Preprocessing ──────────────────────────────────────────────────────────
+sbatch preprocess.sbatch                        # full cohort (~15-20 min, 16 workers)
+python3 preprocessing/test_single_patient.py   # sanity-check one patient
+python3 preprocessing/create_split.py          # regenerate split (only if cohort changes)
+python3 -m preprocessing.check_pickle_shapes   # verify all pickles before training
 
-# Run full preprocessing (~15-20 min)
-sbatch preprocess.sbatch
+# Add geometric channels to existing pickles (run once)
+sbatch preprocessing/add_geom_channels.sbatch
 
-# Regenerate the train/val/test split (only if patient set changes)
-python3 preprocessing/create_split.py
+# ── Training ───────────────────────────────────────────────────────────────
+sbatch --export=ALL,FOLD=0 train_dosegan.sbatch          # baseline DoseGAN fold 0
+sbatch --export=ALL,FOLD=0 train_unet3d.sbatch           # baseline U-Net fold 0
 
-# Verify all pickles have correct shape before training
-python3 -m preprocessing.check_pickle_shapes
+# Geom-channel variants (after setting USE_GEOM_CHANNELS=True in configs):
+for fold in 0 1 2 3 4; do FOLD=$fold sbatch train_dosegan.sbatch; done
+for fold in 0 1 2 3 4; do FOLD=$fold sbatch train_unet3d.sbatch; done
 
-# Smoke test — 2 batches through the full GAN pipeline
-python3 training/smoke_test_dosegan.py
-
-# Train DoseGAN (one fold)
-sbatch --export=ALL,FOLD=0 train_dosegan.sbatch
-
-# Train U-Net (one fold; --activation flag selects sigmoid|tanh)
-sbatch --export=ALL,FOLD=0 train_unet3d.sbatch
-sbatch --export=ALL,FOLD=0,ACT=tanh train_unet3d.sbatch
-
-# Evaluate (writes per-patient CSV + W&B eval run)
-python3 -m training.evaluate_dosegan --fold 0
+# ── Evaluation ─────────────────────────────────────────────────────────────
+python3 -m training.evaluate_dosegan --fold 0   # writes CSV + W&B eval run
 python3 -m training.evaluate_unet3d  --fold 0
 
-# Job monitoring
+# ── Monitoring ─────────────────────────────────────────────────────────────
 squeue -u $USER
 tail -f outputs/logs/<jobname>_<jobid>.out
 ```
@@ -71,15 +110,19 @@ tail -f outputs/logs/<jobname>_<jobid>.out
 ## Data flow
 
 ```
-raw_data/lund-probe/lund-probe/basePart/<patient_id>/
+raw_data/lund-probe/.../basePart/<patient_id>/
     sCT/image_reg2MRI.nii.gz
     MR_StorT2/dose_interpolated.nii.gz + mask_*.nii.gz
         │
-        │  preprocessing/preprocessing.py
+        │  preprocessing/preprocessing.py  (sbatch preprocess.sbatch)
         ▼
-data/pickles/<patient_id>.pkl       # (9,128,256,320) input + (128,256,320) dose
+data/pickles/<patient_id>.pkl      # 'input' (9,128,256,320) + 'dose' (128,256,320)
         │
-        │  training/dataset.py
+        │  preprocessing/add_geom_channels.py  (sbatch add_geom_channels.sbatch)
+        ▼
+data/pickles/<patient_id>.pkl      # + 'geom_channels' (5,128,256,320)
+        │
+        │  training/dataset.py  (use_geom_channels=False → 9 ch | True → 14 ch)
         ▼
 LUNDPROBEDataset → DataLoader
         │
@@ -100,48 +143,47 @@ outputs/analysis/*.png + *.csv
 ## Repository layout
 
 ```
-configs/                hyperparameters (one config file per pipeline component)
-models/                 DoseGAN (3D U-Net generator + PatchGAN discriminator) and 3D U-Net
-preprocessing/          NIfTI → pickle pipeline
-training/               train / smoke-test / evaluate / visualise scripts + LUNDPROBEDataset
-analysis/               post-eval investigations (per-patient + per-acquisition-group)
-data/                   split.csv + preprocessing_summary.csv; pickles are gitignored
-outputs/                checkpoints, logs, eval CSVs, analysis figures (mostly gitignored)
-docs/                   thesis docs (gitignored — personal)
-*.sbatch                SLURM submission scripts
+configs/            hyperparameters (one config file per component)
+models/             DoseGAN (3D U-Net generator + PatchGAN discriminator) and 3D U-Net
+preprocessing/      NIfTI → pickle pipeline + geometric channel augmentation
+training/           train / evaluate / dataset scripts + metrics
+analysis/           post-eval investigations (per-patient, per-acquisition-group)
+data/               split.csv committed; pickles and outputs gitignored
+*.sbatch            SLURM submission scripts
 ```
 
 ## Models
 
 **DoseGAN** (`models/dosegan.py`)
-3D U-Net generator with attention gates at every skip connection (`UnetSkipConnectionBlock3d` + `AttGate`). PatchGAN discriminator (`NLayerDiscriminator`). LSGAN loss by default. ~29.6M parameters. Adapted from the GhTara/Dose_Prediction repository.
+3D U-Net generator with attention gates at every skip connection (`UnetSkipConnectionBlock3d` + `AttGate`). PatchGAN discriminator (`NLayerDiscriminator`). LSGAN loss (`USE_LSGAN=True`). Sigmoid output activation (empirically selected over Tanh via 5-fold ablation). ~29.6M parameters. Adapted from GhTara/Dose_Prediction.
 
-**U-Net 3D baseline** (`models/unet3d.py`)
-MONAI 5-level residual U-Net, 6-level `CHANNELS=(32,64,128,256,256,256)` matching DoseGAN generator's receptive field. ~21.8M parameters. Configurable output activation (`sigmoid` | `tanh`).
+**3D U-Net** (`models/unet3d.py`)
+MONAI 5-level residual U-Net, `CHANNELS=(32,64,128,256,256,256)`. Sigmoid output activation. ~21.8M parameters.
 
-Both models accept the same `(9, 128, 256, 320)` input and predict a normalised dose volume `(1, 128, 256, 320)` in `[0, 1]` (multiply by 50 to get Gy).
+Both models accept `(9, 128, 256, 320)` input for the baseline condition and `(14, 128, 256, 320)` for the with-geom condition. Output: normalised dose `(1, 128, 256, 320)` in [0,1] — multiply by 50 to recover Gy.
 
 ## Split
 
-`data/split.csv` is committed and must not be regenerated casually — it is the permanent record of train/val/test assignments. 15% held-out test set + 5-fold CV on the remainder, stratified by acquisition group (`oldAcq` / `newAcq`).
+`data/split.csv` is committed and must not be regenerated — it is the permanent record of train/val/test assignments. 15% held-out test set + 5-fold CV on the remainder, stratified by acquisition group (`oldAcq` / `newAcq`).
 
 ## Preprocessing
 
-Per patient: resample to 1.5 mm isotropic → z-score sCT inside body contour → normalise dose by 50 Gy → asymmetric PTV-centric crop (128×256×320: 40 slices below PTV centroid, 88 above). Optional structures (Genitalia, PenileBulb) are zero-filled if missing.
+Per patient: resample to 1.5 mm isotropic → z-score sCT inside body contour (HU window −990–2000) → normalise dose by 50 Gy → asymmetric PTV-centric crop (128×256×320: 40 slices below PTV centroid, 88 above). Optional structures (Genitalia, PenileBulb) zero-filled if absent.
 
-## Experiment tracking
-
-W&B project: `doseprediction-lundprobe`. All runs use `group=cfg.RUN_NAME` so the 5 folds of one experiment collapse into a single row. `job_type` distinguishes `train` from `eval`. Evaluation results (per-patient body MAE/RMSE + DVH metrics per structure) are logged both to per-fold CSVs (`outputs/evaluation/<run_name>_fold<F>_val.csv`) and as W&B Tables.
+Geometric channels are computed after cropping, in the final output coordinate space, by `preprocessing/geometric_channels.py`.
 
 ## Evaluation metrics
 
-`training/metrics.py` provides the full clinical evaluation suite used by both eval scripts:
+`training/metrics.py` provides the full clinical evaluation suite:
 
 | Category | Metrics |
 |---|---|
 | Voxel-level | MAE and RMSE over body, PTV, Rectum, Bladder |
-| DVH endpoints | Dmean, Dmax, D95, D98, D01cc, V20, V40 per structure |
-| Boundary MAE | MAE in ±20 mm band around PTV/OAR surface (tests steep dose falloff) |
-| V prescription | % of OAR volume receiving ≥ patient-specific prescription dose |
+| Boundary MAE | MAE in ±20 mm band around PTV / Rectum / Bladder surface |
+| DVH endpoints | Dmean, Dmax, D95, D98, D0.1cc, V20, V40 per structure (pred vs reference, diff) |
 | Gamma pass rate | 3%/3 mm and 2%/2 mm (3D, body-masked, 10% low-dose cut-off) |
 | Isodose conformality | Dice + HD95 at 100%, 95%, 80%, 50% isodose levels |
+
+## Experiment tracking
+
+W&B project: `doseprediction-lundprobe`. `group=cfg.RUN_NAME` collapses all 5 folds of one experiment into a single dashboard row. Evaluation results are logged as per-fold CSVs (`outputs/evaluation/<run_name>_fold<F>_val.csv`) and W&B Tables.

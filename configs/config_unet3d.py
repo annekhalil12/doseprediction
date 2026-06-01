@@ -12,7 +12,9 @@ CKPT_DIR   = Path("outputs/checkpoints_unet3d")
 
 # ── Experiment identity ────────────────────────────────────────────────────
 PROJECT_NAME = "doseprediction-lundprobe"
-RUN_NAME     = "unet3d_ch32_sigmoid_grad1.0_snellius"   # fold number appended at runtime; activation token rewritten by --activation
+# For geom experiment: set USE_GEOM_CHANNELS=True, INPUT_NC=14,
+# RUN_NAME="unet3d_ch32_sigmoid_geom_snellius"
+RUN_NAME     = "unet3d_ch32_sigmoid_snellius"   # fold number appended at runtime
 
 # ── Cross-validation ───────────────────────────────────────────────────────
 FOLD = 0
@@ -23,7 +25,8 @@ BATCH_SIZE  = 1
 NUM_WORKERS = 4
 
 # ── Model architecture ─────────────────────────────────────────────────────
-INPUT_NC      = 9    # 8 structure masks + sCT
+INPUT_NC      = 9    # 9 without geom (8 masks + sCT); 14 with geom (+ 5 geom channels)
+USE_GEOM_CHANNELS = False   # set True + INPUT_NC=14 + update RUN_NAME for geom experiment
 OUTPUT_NC     = 1    # predicted dose
 CHANNELS      = (32, 64, 128, 256, 256, 256)  # feature maps at each U-Net level
 STRIDES       = (2, 2, 2, 2, 2)              # downsampling factor per transition
@@ -37,5 +40,5 @@ BETA2 = 0.999
 
 # ── Loss ───────────────────────────────────────────────────────────────────
 LAMBDA_DVH          = 0.1  # weight for structure-Dmean DVH regularisation loss
-LAMBDA_GRAD         = 1.0  # weight for gradient-magnitude loss (dose falloff sharpness)
+LAMBDA_GRAD         = 0.0  # gradient-magnitude loss — confirmed no benefit (fold-0 negative result)
 EARLY_STOP_PATIENCE = 15   # stop if val_dvh_score does not improve for this many epochs

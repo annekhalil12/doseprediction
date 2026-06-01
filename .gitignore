@@ -26,6 +26,9 @@ outputs/logs/
 outputs/evaluation/
 outputs/analysis/
 
+# Collaborator reference files — private HPC paths, not part of this thesis
+nika/
+
 # Personal context files — ignore everything in docs/ except the tracker
 docs/*
 !docs/thesis_reporting_tracker.md

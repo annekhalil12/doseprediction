@@ -16,18 +16,23 @@ CKPT_DIR   = Path("outputs/checkpoints_dosegan")
 # Change RUN_NAME when you change anything meaningful — this is what shows
 # up in the W&B dashboard so you can tell runs apart at a glance.
 PROJECT_NAME = "doseprediction-lundprobe"
-RUN_NAME     = "dosegan_ngf32_sigmoid_grad1.0_snellius"   # fold number appended at runtime
+# For geom experiment: set USE_GEOM_CHANNELS=True, INPUT_NC=14,
+# RUN_NAME="dosegan_ngf32_sigmoid_geom_snellius"
+RUN_NAME     = "dosegan_ngf32_sigmoid_snellius"   # fold number appended at runtime
 
 # ── Cross-validation ───────────────────────────────────────────────────────
 FOLD = 0  # which fold is held out as validation this run (0–4)
 
 # ── Training ───────────────────────────────────────────────────────────────
-EPOCHS      = 100
+# 200 epochs gives the model more time to converge on the full 5-fold dataset;
+# early runs plateaued before 100 epochs but later folds may need the headroom.
+EPOCHS      = 200
 BATCH_SIZE  = 1    # 3D volumes — batch size 1 is standard
 NUM_WORKERS = 4    # reduce to 0 if DataLoader throws errors on Windows
 
 # ── Model architecture ─────────────────────────────────────────────────────
-INPUT_NC  = 9   # 8 structure masks + sCT intensity channel
+INPUT_NC  = 9   # 9 without geom (8 masks + sCT); 14 with geom (+ 5 geom channels)
+USE_GEOM_CHANNELS = False   # set True + INPUT_NC=14 + update RUN_NAME for geom experiment
 OUTPUT_NC = 1   # predicted dose volume
 NGF       = 32  # base number of generator filters — doubles at each U-Net level
 NDF       = 32  # base number of discriminator filters
@@ -35,13 +40,17 @@ N_LAYERS  = 3   # number of discriminator layers
 
 # ── Optimizers ─────────────────────────────────────────────────────────────
 LR_G   = 2e-4         # generator learning rate
-LR_D   = 2e-4         # discriminator learning rate
+# Halving LR_D slows the discriminator relative to the generator, reducing
+# mode collapse risk and giving the generator more useful gradient signal.
+LR_D   = 1e-4         # discriminator learning rate
 BETA1  = 0.5          # Adam beta1 — 0.5 is standard for GAN training
 BETA2  = 0.999        # Adam beta2
 
 # ── Loss weights ───────────────────────────────────────────────────────────
 LAMBDA_VOXEL        = 100  # weight of L1 voxel loss relative to adversarial loss
 LAMBDA_DVH          = 5.0  # weight for structure-Dmean DVH regularisation loss
-LAMBDA_GRAD         = 1.0  # weight for gradient-magnitude loss (dose falloff sharpness)
-EARLY_STOP_PATIENCE = 15   # stop if val_dvh_score does not improve for this many epochs
+LAMBDA_GRAD         = 0.0  # gradient-magnitude loss — confirmed no benefit (fold-0 negative result)
+# Doubled to match the longer training budget; 15 was too aggressive at 200 epochs
+# and would cut runs that are still slowly improving in the middle third.
+EARLY_STOP_PATIENCE = 30   # stop if val_dvh_score does not improve for this many epochs
 USE_LSGAN    = True   # True = LSGAN (MSE), False = vanilla GAN (BCE)

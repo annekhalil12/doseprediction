@@ -110,24 +110,31 @@ class LUNDPROBEDataset(Dataset):
     fold       : which fold is currently the validation fold (0–4).
                  Required for split="train" and split="val".
                  Ignored for split="test" (pass None).
-    channels   : which input channel indices to return; None = all available.
-                 This is how each model gets its channel subset from the
-                 shared 9-channel cache without reprocessing.
-                 Example: channels=[0,1,2,7,8] gives PTV+Rectum+Bladder+BODY+sCT.
+    channels          : which input channel indices to return; None = all available.
+                        This is how each model gets its channel subset from the
+                        shared 9-channel cache without reprocessing.
+                        Example: channels=[0,1,2,7,8] gives PTV+Rectum+Bladder+BODY+sCT.
+    use_geom_channels : if True, append the 5 pre-computed geometric channels
+                        (dist_ptv, dist_body, dir_z, dir_y, dir_x) from the pickle's
+                        'geom_channels' key. Input tensor becomes (14, D, H, W).
+                        Flip augmentation is disabled in this mode because the
+                        directional channels (dir_z, dir_x) are not flip-invariant.
     """
 
     def __init__(
         self,
-        split_csv:  Path,
-        pickle_dir: Path,
-        split:      Literal["train", "val", "test"],
-        fold:       Optional[int] = None,
-        channels:   List[int] | None = None,
+        split_csv:          Path,
+        pickle_dir:         Path,
+        split:              Literal["train", "val", "test"],
+        fold:               Optional[int] = None,
+        channels:           List[int] | None = None,
+        use_geom_channels:  bool = False,
     ) -> None:
         super().__init__()
 
-        self.pickle_dir = Path(pickle_dir)
-        self.channels   = channels
+        self.pickle_dir        = Path(pickle_dir)
+        self.channels          = channels
+        self.use_geom_channels = use_geom_channels
 
         # Resolve where the sCT channel lives after the optional channel subset
         # is applied. None means "no sCT in the returned tensor" — intensity
@@ -201,21 +208,27 @@ class LUNDPROBEDataset(Dataset):
         # Transforms are only active during training — val and test always
         # see the original unmodified volumes for reproducible evaluation.
         if split == "train":
-            # Geometric transforms use the dict API (suffix 'd') so that
-            # "input" and "dose" are always flipped/rotated identically —
-            # the dose map must stay aligned with the anatomy at all times.
-            self.geometric_transform = Compose([
-                RandFlipd(
-                    keys=["input", "dose"],
-                    prob=0.5,
-                    spatial_axis=0,   # flip along depth axis
-                ),
-                RandFlipd(
-                    keys=["input", "dose"],
-                    prob=0.5,
-                    spatial_axis=2,   # flip left-right
-                ),
-            ])
+            # Flip augmentation is disabled when geometric channels are in use.
+            # The directional channels (dir_z, dir_x) encode absolute position
+            # relative to the PTV centroid; a spatial flip moves the values but
+            # does not invert them, so the encoding becomes inconsistent with the
+            # flipped anatomy. Disabling flips is the cleanest solution without
+            # recomputing the channels post-augmentation.
+            if not use_geom_channels:
+                self.geometric_transform = Compose([
+                    RandFlipd(
+                        keys=["input", "dose"],
+                        prob=0.5,
+                        spatial_axis=0,   # flip along depth axis
+                    ),
+                    RandFlipd(
+                        keys=["input", "dose"],
+                        prob=0.5,
+                        spatial_axis=2,   # flip left-right
+                    ),
+                ])
+            else:
+                self.geometric_transform = None
 
             # Intensity transforms use the non-dict API because they are
             # applied to channel 8 (sCT) only — binary masks in channels
@@ -286,6 +299,19 @@ class LUNDPROBEDataset(Dataset):
         # None means "return all channels".
         if self.channels is not None:
             input_tensor = input_tensor[self.channels]   # (len(channels), D, H, W)
+
+        # ── Append geometric channels if requested ─────────────────────────
+        # geom_channels is a pre-computed (5, D, H, W) array added to the
+        # pickle by preprocessing/add_geom_channels.py. Appending after the
+        # 9-channel base gives a 14-channel input tensor.
+        if self.use_geom_channels:
+            if "geom_channels" not in data:
+                raise KeyError(
+                    f"Pickle for '{patient_id}' has no 'geom_channels' key. "
+                    "Run preprocessing/add_geom_channels.py first."
+                )
+            geom_tensor  = torch.from_numpy(data["geom_channels"])   # (5, D, H, W)
+            input_tensor = torch.cat([input_tensor, geom_tensor], dim=0)  # (14, D, H, W)
 
         # ── Add channel dimension to dose and masks ───────────────────────
         # PyTorch 3D convolutions expect (batch, channels, D, H, W).

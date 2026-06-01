@@ -19,7 +19,9 @@ class GANLoss(nn.Module):
         if use_lsgan:
             self.loss = nn.MSELoss()
         else:
-            self.loss = nn.BCELoss()
+            # BCEWithLogitsLoss fuses sigmoid + BCE in a numerically stable way;
+            # plain BCELoss requires [0,1] inputs and produces NaNs with raw logits.
+            self.loss = nn.BCEWithLogitsLoss()
 
     def get_target_tensor(self, input, target_is_real):
         target_tensor = None
@@ -53,7 +55,11 @@ class GANLoss(nn.Module):
 # ablation. Pair with the U-Net norm ablation in models/unet3d.py.
 class UnetGenerator3d(nn.Module):
     def __init__(self, input_nc, output_nc, ngf=32,
-                 norm_layer=nn.BatchNorm3d, use_dropout=False, gpu_ids=[]):
+                 # InstanceNorm is stable at batch_size=1; BatchNorm collapses to
+                 # single-sample statistics and its running mean/var overfits to the
+                 # training distribution, hurting generalisation across acquisition groups.
+                 # affine=True gives InstanceNorm learnable scale/shift, matching BatchNorm expressiveness.
+                 norm_layer=functools.partial(nn.InstanceNorm3d, affine=True), use_dropout=False, gpu_ids=[]):
         super(UnetGenerator3d, self).__init__()
         self.gpu_ids = gpu_ids
 
@@ -98,7 +104,7 @@ class AttGate(nn.Module):
         self.intermediate = nn.Sequential(
             nn.ReLU(),
             nn.Conv3d(in_ch, in_ch, 1, stride=1, padding='same'),
-            nn.BatchNorm3d(in_ch),
+            nn.InstanceNorm3d(in_ch, affine=True),  # affine=True gives InstanceNorm learnable scale/shift, matching BatchNorm expressiveness.
             nn.Sigmoid()
         )
 
@@ -118,7 +124,12 @@ class AttGate(nn.Module):
 # Defines the submodule with skip connection.
 class UnetSkipConnectionBlock3d(nn.Module):
     def __init__(self, in_nc, down_nc, up_nc,
-                 submodule=None, innermost=False, norm_layer=nn.BatchNorm3d, use_dropout=False):
+                 submodule=None, innermost=False,
+                 # InstanceNorm is stable at batch_size=1; BatchNorm collapses to
+                 # single-sample statistics and its running mean/var overfits to the
+                 # training distribution, hurting generalisation across acquisition groups.
+                 # affine=True gives InstanceNorm learnable scale/shift, matching BatchNorm expressiveness.
+                 norm_layer=functools.partial(nn.InstanceNorm3d, affine=True), use_dropout=False):
         super(UnetSkipConnectionBlock3d, self).__init__()
         if type(norm_layer) == functools.partial:
             use_bias = norm_layer.func == nn.InstanceNorm3d
@@ -179,7 +190,12 @@ class BlockDiscriminator(nn.Module):
 
 # Defines the PatchGAN discriminator with the specified arguments.
 class NLayerDiscriminator(nn.Module):
-    def __init__(self, input_nc, ndf=64, n_layers=3, norm_layer=nn.BatchNorm3d, use_sigmoid=False, gpu_ids=[]):
+    def __init__(self, input_nc, ndf=64, n_layers=3,
+                 # InstanceNorm is stable at batch_size=1; BatchNorm collapses to
+                 # single-sample statistics and its running mean/var overfits to the
+                 # training distribution, hurting generalisation across acquisition groups.
+                 # affine=True gives InstanceNorm learnable scale/shift, matching BatchNorm expressiveness.
+                 norm_layer=functools.partial(nn.InstanceNorm3d, affine=True), use_sigmoid=False, gpu_ids=[]):
         super(NLayerDiscriminator, self).__init__()
         self.gpu_ids = gpu_ids
         if type(norm_layer) == functools.partial:
@@ -201,10 +217,9 @@ class NLayerDiscriminator(nn.Module):
                 BlockDiscriminator(input_nc=(2 ** n) * ndf, ndf=(2 ** n) * ndf, norm_layer=norm_layer)
             ]
         # Last layer
+        # LSGAN requires raw logits at discriminator output — norm and activation here break MSE loss semantics.
         sequence += [
             nn.Conv3d((2 ** (n + 1)) * ndf, 1, kernel_size=4, stride=1, padding=3, dilation=2),
-            norm_layer(1),
-            nn.LeakyReLU(0.2, )
         ]
 
         if use_sigmoid:

@@ -216,10 +216,12 @@ def main():
     train_ds = LUNDPROBEDataset(
         split_csv=cfg.SPLIT_CSV, pickle_dir=cfg.PICKLE_DIR,
         split="train", fold=cfg.FOLD,
+        use_geom_channels=cfg.USE_GEOM_CHANNELS,
     )
     val_ds = LUNDPROBEDataset(
         split_csv=cfg.SPLIT_CSV, pickle_dir=cfg.PICKLE_DIR,
         split="val", fold=cfg.FOLD,
+        use_geom_channels=cfg.USE_GEOM_CHANNELS,
     )
     train_loader = DataLoader(
         train_ds, batch_size=cfg.BATCH_SIZE,

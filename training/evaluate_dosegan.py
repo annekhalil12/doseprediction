@@ -102,6 +102,7 @@ def evaluate(fold: int, split: str, skip_gamma: bool = False) -> None:
     ds = LUNDPROBEDataset(
         split_csv=cfg.SPLIT_CSV, pickle_dir=cfg.PICKLE_DIR,
         split=split, fold=fold if split != "test" else None,
+        use_geom_channels=cfg.USE_GEOM_CHANNELS,
     )
     loader    = DataLoader(ds, batch_size=1, shuffle=False, num_workers=0)
     acq_map   = load_acq_group_map(cfg.SPLIT_CSV)

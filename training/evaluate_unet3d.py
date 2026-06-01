@@ -79,6 +79,7 @@ def evaluate(fold: int, split: str, skip_gamma: bool = False) -> None:
     ds = LUNDPROBEDataset(
         split_csv=cfg.SPLIT_CSV, pickle_dir=cfg.PICKLE_DIR,
         split=split, fold=fold if split != "test" else None,
+        use_geom_channels=cfg.USE_GEOM_CHANNELS,
     )
     loader  = DataLoader(ds, batch_size=1, shuffle=False, num_workers=0)
     acq_map = load_acq_group_map(cfg.SPLIT_CSV)
@@ -135,10 +136,14 @@ def evaluate(fold: int, split: str, skip_gamma: bool = False) -> None:
             v_presc_blad_true = compute_Vx(true_gy, bladder_mask, presc)
 
             # ---- gamma ------------------------------------------------------
-            gamma_3_3 = compute_gamma_passrate(pred_gy, true_gy, body_mask,
-                                               dose_percent=3.0, distance_mm=3.0)
-            gamma_2_2 = compute_gamma_passrate(pred_gy, true_gy, body_mask,
-                                               dose_percent=2.0, distance_mm=2.0)
+            if skip_gamma:
+                gamma_3_3 = float("nan")
+                gamma_2_2 = float("nan")
+            else:
+                gamma_3_3 = compute_gamma_passrate(pred_gy, true_gy, body_mask,
+                                                   dose_percent=3.0, distance_mm=3.0)
+                gamma_2_2 = compute_gamma_passrate(pred_gy, true_gy, body_mask,
+                                                   dose_percent=2.0, distance_mm=2.0)
 
             # ---- isodose Dice + HD95 ----------------------------------------
             isodose = compute_isodose_metrics(pred_gy, true_gy, ptv_mask)

@@ -130,6 +130,7 @@ def train_one_epoch(
         pred_fake = discriminator(fake_pair)
 
         loss_G_adv   = criterion_GAN(pred_fake, target_is_real=True)
+        # L1 loss outperforms MSE for dose prediction — penalises outliers less aggressively and produces sharper predictions.
         loss_G_voxel = masked_l1(fake_dose, real_dose, body_mask)
         loss_G_dvh   = (
             structure_dmean_loss(fake_dose, real_dose, ptv_mask) +
@@ -277,10 +278,12 @@ def main():
     train_ds = LUNDPROBEDataset(
         split_csv=cfg.SPLIT_CSV, pickle_dir=cfg.PICKLE_DIR,
         split="train", fold=cfg.FOLD,
+        use_geom_channels=cfg.USE_GEOM_CHANNELS,
     )
     val_ds = LUNDPROBEDataset(
         split_csv=cfg.SPLIT_CSV, pickle_dir=cfg.PICKLE_DIR,
         split="val", fold=cfg.FOLD,
+        use_geom_channels=cfg.USE_GEOM_CHANNELS,
     )
     train_loader = DataLoader(
         train_ds, batch_size=cfg.BATCH_SIZE,

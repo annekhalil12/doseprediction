@@ -25,7 +25,8 @@ for FOLD in 0 1 2 3 4; do
     echo "--- Fold $FOLD ---"
     python3 -m training.evaluate_dosegan \
         --fold $FOLD \
-        --run-name dosegan_ngf32_sigmoid_snellius
+        --run-name dosegan_ngf32_sigmoid_snellius \
+        --skip-gamma
 done
 
 echo ""
@@ -34,7 +35,8 @@ for FOLD in 0 1 2 3 4; do
     echo "--- Fold $FOLD ---"
     python3 -m training.evaluate_unet3d \
         --fold $FOLD \
-        --run-name unet3d_ch32_sigmoid_snellius
+        --run-name unet3d_ch32_sigmoid_snellius \
+        --skip-gamma
 done
 
 echo ""

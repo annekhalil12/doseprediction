@@ -1,11 +1,11 @@
 """
-config.py
-=========
+config_preprocessing_shared.py
+================================
 Central configuration for the LUND-PROBE dose prediction preprocessing pipeline.
 
-Adapted from collaborator's configV5.py. DoseGNN-specific sections (encoder,
-graph, GNN) are omitted here — this config serves the shared preprocessing
-pipeline used by all three models (3D U-Net, DoseGAN, DoseGNN).
+Serves the shared preprocessing pipeline used by both models (3D U-Net and DoseGAN)
+under two input conditions: 9-channel baseline (8 masks + sCT) and 14-channel
+with-geometric-channels (+ 5 spatial encoding channels appended at indices 9–13).
 """
 
 from dataclasses import dataclass, field
@@ -16,11 +16,6 @@ from typing import List, Tuple, Literal
 # ---------------------------------------------------------------------------
 # Paths — update DATA_ROOT to point at your local copy of LUND-PROBE
 # ---------------------------------------------------------------------------
-
-# Example (Windows, adjust to your actual path):
-#   DATA_ROOT = Path(r"\\vumc.nl\...\lund-probe\basePart")
-# Example (laptop local copy):
-#   DATA_ROOT = Path(r"C:\Users\anne\data\lund-probe\basePart")
 
 DATA_ROOT  = Path("/gpfs/scratch1/shared/akhalil/data/thesis-doseprediction/raw_data/lund-probe/lund-probe/basePart")
 
@@ -69,9 +64,13 @@ class PreprocessingConfig:
 # ---------------------------------------------------------------------------
 # Channel map — ORDER MATTERS for tensor assembly
 # ---------------------------------------------------------------------------
-# Channels 0–7:  binary structure masks (available now)
-# Channels 8–14: geometric features    (pending V5geometric_channels.py)
-# Channel 15:    normalised sCT        (available now)
+# Baseline condition (9 channels, stored in every pickle's 'input' key):
+#   0–7:  binary structure masks
+#   8:    normalised sCT intensity
+#
+# With-geom condition (14 channels, channels 9–13 stored in pickle's 'geom_channels' key
+# and appended by LUNDPROBEDataset when use_geom_channels=True):
+#   9–13: 5 spatial encoding channels (see preprocessing/geometric_channels.py)
 
 CHANNEL_MAP = {
     0:  "PTVT_427",
@@ -82,15 +81,11 @@ CHANNEL_MAP = {
     5:  "Genitalia",
     6:  "PenileBulb",
     7:  "BODY",
-    8:  "dist_to_ptv_surface",
-    9:  "dist_to_body_surface",
-    10: "azimuthal_angle",
-    11: "polar_angle",
-    12: "rad_depth_mean",
-    13: "rad_depth_max",
-    14: "rad_depth_min",
-    15: "sct_intensity",
+    8:  "sct_intensity",
+    # Geometric channels — appended at indices 9–13 (preprocessing/add_geom_channels.py)
+    9:  "dist_to_ptv_surface",
+    10: "dist_to_body_surface",
+    11: "dir_z_shifted",
+    12: "dir_y_shifted",
+    13: "dir_x_shifted",
 }
-
-# Channels we can compute right now (no geometric file needed)
-AVAILABLE_CHANNELS = {k: v for k, v in CHANNEL_MAP.items() if k <= 7 or k == 15}
