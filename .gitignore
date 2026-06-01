@@ -19,6 +19,9 @@ data/pickles/
 data/zotero_library.json
 data/zotero_papers.json
 
+# Curated results (figures + summary) are committed under results/
+# Everything under outputs/ stays gitignored
+
 # Training outputs — ignore everything; nothing here is committed
 outputs/checkpoints_*/
 outputs/visualisations/
