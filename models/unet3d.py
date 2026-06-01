@@ -38,13 +38,9 @@ class UNet3d(nn.Module):
             strides       = strides,
             num_res_units = num_res_units,
             act           = "PRELU",
-            # TODO(2026-05-15) ablation: try norm="INSTANCE" or "GROUP".
-            # At batch_size=1 BatchNorm reduces to per-sample stats with an
-            # unstable running mean/var; the same running stats are also fit
-            # to the training distribution, which may hurt generalisation
-            # to oldAcq/newAcq and the future pancreas cohort. Pair with the
-            # DoseGAN norm ablation in models/dosegan.py UnetGenerator3d.
-            norm          = "BATCH",
+            # InstanceNorm(affine=True) matches DoseGAN's normalisation and is
+            # stable at batch_size=1; BatchNorm collapses to single-sample stats.
+            norm          = ("instance", {"affine": True}),
             dropout       = 0.0,
         )
         # Configurable so DoseGAN and U-Net can share the same activation
