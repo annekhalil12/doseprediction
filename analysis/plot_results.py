@@ -214,11 +214,6 @@ def fig_acquisition(data: dict) -> None:
                    color=COLORS[label], edgecolor="black", linewidth=0.8, capsize=4)
 
         ax.set_xticks(x)
-        old_n = len(data.get(list(BASELINE_MODELS.keys())[0], pd.DataFrame(
-            columns=["acquisition_group"]))[
-            data.get(list(BASELINE_MODELS.keys())[0],
-                     pd.DataFrame(columns=["acquisition_group"]))[
-                "acquisition_group"] == "oldAcq"])
         ax.set_xticklabels(["oldAcq", "newAcq"])
         ax.set_ylabel(ylabel)
         ax.set_title(f"By acquisition group — {ylabel}")
@@ -359,21 +354,6 @@ def main() -> None:
         OUT_DIR = Path(args.out_dir)
 
     OUT_DIR.mkdir(parents=True, exist_ok=True)
-
-    # Write a README so the folder is self-documenting
-    readme = OUT_DIR / "README.txt"
-    if not readme.exists():
-        import datetime
-        with open(readme, "w") as f:
-            f.write(f"Generated: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M')}\n")
-            f.write(f"Script:    analysis/plot_results.py --out-dir {OUT_DIR}\n\n")
-            f.write("Models with NEW metric CSVs (boundary MAE, isodose Dice/HD95):\n")
-            f.write("  dosegan_ngf32_sigmoid_snellius  — all 5 folds (eval job 23131507)\n\n")
-            f.write("Models with OLD metric CSVs (body MAE/RMSE + DVH only):\n")
-            f.write("  unet3d_ch32_sigmoid_snellius    — eval job 23131507 still running\n")
-            f.write("  *_tanh_snellius                 — old format (May 16)\n\n")
-            f.write("Re-run with --out-dir outputs/analysis once U-Net eval finishes\n")
-            f.write("to get a complete side-by-side comparison.\n")
 
     print("Loading eval CSVs...")
     data: dict[str, pd.DataFrame | None] = {}

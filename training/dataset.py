@@ -85,10 +85,9 @@ from monai.transforms import (
 log = logging.getLogger(__name__)
 
 
-# Position of the sCT intensity channel inside the cached pickle's input tensor.
-# Today the pickle has 9 channels (0–7 = structure masks, 8 = sCT). When the
-# geometric channels (currently indices 8–14 in CHANNEL_MAP) are added, the
-# pickle will expand to 16 channels and this constant becomes 15.
+# sCT is always at index 8 in the base 9-channel input tensor.
+# Geometric channels are appended at indices 9–13 via use_geom_channels=True
+# (stored separately under 'geom_channels' in the pickle, not in 'input').
 SCT_PICKLE_IDX = 8
 
 

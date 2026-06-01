@@ -1,5 +1,5 @@
 # analysis/inv1_acquisition_breakdown.py
-# Investigation 1: aggregate per-patient eval CSVs across 5 DoseGAN folds and
+# Investigation 1: aggregate per-patient eval CSVs across 5 folds and
 # test whether oldAcq patients are systematically worse than newAcq.
 #
 # Reads:  outputs/evaluation/{run_name}_fold{0..4}_val.csv
@@ -90,7 +90,7 @@ def boxplot(df: pd.DataFrame, out_path: Path) -> None:
     axes[1].set_title("Per-fold breakdown")
     axes[1].grid(alpha=0.3)
 
-    fig.suptitle("DoseGAN body-masked MAE by acquisition group", fontsize=12)
+    fig.suptitle(f"{cfg.RUN_NAME} — body-masked MAE by acquisition group", fontsize=12)
     fig.tight_layout()
     fig.savefig(out_path, dpi=150)
     print(f"saved: {out_path}")

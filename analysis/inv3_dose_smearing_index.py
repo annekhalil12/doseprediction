@@ -125,12 +125,15 @@ def main() -> None:
             with open(PICKLE_DIR / f"{patient_id}.pkl", "rb") as f:
                 data = pickle.load(f)
 
-            inp = torch.from_numpy(data["input"]).unsqueeze(0).to(device)
+            inp_arr = data["input"]                                         # (9,D,H,W)
+            if cfg.USE_GEOM_CHANNELS and "geom_channels" in data:
+                inp_arr = np.concatenate([inp_arr, data["geom_channels"]], axis=0)
+            inp = torch.from_numpy(inp_arr).unsqueeze(0).to(device)
             with torch.no_grad():
                 pred = gen(inp)[0, 0].cpu().numpy() * DOSE_SCALE
             true = data["dose"] * DOSE_SCALE
             ptv  = data["ptv_mask"]
-            body = data["input"][7]
+            body = data["input"][7]                                         # BODY always ch 7
 
             idx = per_patient_index(pred, true, ptv, body)
             rows.append({

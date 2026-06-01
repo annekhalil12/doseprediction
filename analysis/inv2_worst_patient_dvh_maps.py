@@ -208,11 +208,14 @@ def main() -> None:
             with open(pickle_path, "rb") as f:
                 data = pickle.load(f)
 
-            inp = torch.from_numpy(data["input"]).unsqueeze(0).to(device)   # (1,9,D,H,W)
+            inp_arr = data["input"]                                             # (9,D,H,W)
+            if cfg.USE_GEOM_CHANNELS and "geom_channels" in data:
+                inp_arr = np.concatenate([inp_arr, data["geom_channels"]], axis=0)
+            inp = torch.from_numpy(inp_arr).unsqueeze(0).to(device)
             with torch.no_grad():
                 pred = gen(inp)[0, 0].cpu().numpy() * DOSE_SCALE
             true = data["dose"] * DOSE_SCALE                                # (D,H,W)
-            body = data["input"][7]                                         # (D,H,W)
+            body = data["input"][7]                                         # (D,H,W) — BODY always ch 7
 
             out_path = OUT_DIR / f"inv2_{cfg.RUN_NAME}_worst_{int(row['rank'])}_fold{fold}_{patient_id}.png"
             make_figure(
