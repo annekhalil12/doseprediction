@@ -99,8 +99,8 @@ for fold in 0 1 2 3 4; do FOLD=$fold sbatch train_dosegan.sbatch; done
 for fold in 0 1 2 3 4; do FOLD=$fold sbatch train_unet3d.sbatch; done
 
 # ── Evaluation ─────────────────────────────────────────────────────────────
-python3 -m training.evaluate_dosegan --fold 0   # writes CSV + W&B eval run
-python3 -m training.evaluate_unet3d  --fold 0
+python3 -m training.evaluate --model dosegan --fold 0   # writes CSV + W&B eval run
+python3 -m training.evaluate --model unet3d  --fold 0
 
 # ── Monitoring ─────────────────────────────────────────────────────────────
 squeue -u $USER

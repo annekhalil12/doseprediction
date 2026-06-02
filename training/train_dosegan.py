@@ -175,7 +175,7 @@ def validate_dvh(
     Returns (val_L1, val_dvh_score).
 
     val_L1       — body-masked L1 in normalised units (stored in checkpoint for
-                   backward compatibility with evaluate_dosegan.py).
+                   stored in checkpoint for evaluate.py).
     val_dvh_score — mean|Δ PTV D95| + mean|Δ Bladder Dmean| + mean|Δ Rectum Dmean|
                    in Gy. Lower is better. Used for early stopping.
     """

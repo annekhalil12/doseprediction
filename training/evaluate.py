@@ -1,11 +1,9 @@
-# training/evaluate_unet3d.py
-# Post-training evaluation of the best U-Net checkpoint.
-# Mirrors evaluate_dosegan.py exactly so both models produce comparable CSVs.
+# training/evaluate.py
+# Unified evaluation for DoseGAN and U-Net checkpoints (baseline and geom).
 #
 # Run from the project root:
-#   python -m training.evaluate_unet3d                        # val split, fold from config
-#   python -m training.evaluate_unet3d --fold 2               # different fold
-#   python -m training.evaluate_unet3d --activation tanh      # tanh variant
+#   python -m training.evaluate --model dosegan [--fold N] [--run-name NAME] [--skip-gamma]
+#   python -m training.evaluate --model unet3d  [--fold N] [--run-name NAME] [--skip-gamma] [--activation {sigmoid,tanh}]
 #
 # *** Do NOT add a --split test flag until all model selection is complete. ***
 
@@ -21,10 +19,7 @@ import torch
 import wandb
 from torch.utils.data import DataLoader
 
-from configs import config_unet3d as cfg
-from models.unet3d import UNet3d
 from training.dataset import LUNDPROBEDataset
-from training.evaluate_dosegan import DOSE_SCALE, load_acq_group_map, _wandb_summary_stats
 from training.metrics import (
     compute_mae, compute_rmse,
     dvh_endpoints,
@@ -37,43 +32,93 @@ from training.metrics import (
 logging.basicConfig(level=logging.INFO, stream=sys.stdout)
 log = logging.getLogger(__name__)
 
+DOSE_SCALE = 50.0
 
-def evaluate(fold: int, split: str, skip_gamma: bool = False) -> None:
+
+def load_acq_group_map(split_csv: Path) -> dict:
+    mapping = {}
+    with open(split_csv, newline="") as f:
+        for row in csv.DictReader(f):
+            mapping[row["patient_id"]] = row["acquisition_group"]
+    return mapping
+
+
+def _wandb_summary_stats(wandb_run, key: str, values: list) -> None:
+    clean = [v for v in values if not np.isnan(v)]
+    if clean:
+        wandb_run.summary[f"{key}_mean"] = float(np.mean(clean))
+        wandb_run.summary[f"{key}_std"]  = float(np.std(clean))
+
+
+def _load_model_and_cfg(model_type: str, fold: int, run_name=None,
+                        activation=None, device=None):
+    if model_type == "dosegan":
+        from configs import config_dosegan as cfg
+        from models.dosegan import UnetGenerator3d
+        if run_name:
+            cfg.RUN_NAME = run_name
+        ckpt_path = cfg.CKPT_DIR / f"{cfg.RUN_NAME}_fold{fold}_best.pt"
+        if not ckpt_path.exists():
+            raise FileNotFoundError(
+                f"No checkpoint at {ckpt_path}. Train fold {fold} first."
+            )
+        checkpoint = torch.load(ckpt_path, map_location=device)
+        model = UnetGenerator3d(
+            input_nc=cfg.INPUT_NC, output_nc=cfg.OUTPUT_NC, ngf=cfg.NGF,
+        ).to(device)
+        model.load_state_dict(checkpoint["generator"])
+        wandb_extra = {}
+    else:
+        from configs import config_unet3d as cfg
+        from models.unet3d import UNet3d
+        if activation is not None:
+            cfg.RUN_NAME = cfg.RUN_NAME.replace(cfg.OUTPUT_ACTIVATION, activation)
+            cfg.OUTPUT_ACTIVATION = activation
+        if run_name:
+            cfg.RUN_NAME = run_name
+        ckpt_path = cfg.CKPT_DIR / f"{cfg.RUN_NAME}_fold{fold}_best.pt"
+        if not ckpt_path.exists():
+            raise FileNotFoundError(
+                f"No checkpoint at {ckpt_path}. Train fold {fold} first."
+            )
+        checkpoint = torch.load(ckpt_path, map_location=device)
+        model = UNet3d(
+            in_channels       = cfg.INPUT_NC,
+            out_channels      = cfg.OUTPUT_NC,
+            channels          = cfg.CHANNELS,
+            strides           = cfg.STRIDES,
+            num_res_units     = cfg.NUM_RES_UNITS,
+            output_activation = cfg.OUTPUT_ACTIVATION,
+        ).to(device)
+        state_key = "model" if "model" in checkpoint else "generator"
+        model.load_state_dict(checkpoint[state_key])
+        wandb_extra = {"output_activation": cfg.OUTPUT_ACTIVATION}
+
+    return model, cfg, checkpoint, wandb_extra
+
+
+def evaluate(model_type: str, fold: int, split: str,
+             run_name=None, activation=None, skip_gamma: bool = False) -> None:
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    log.info(f"Evaluating on: {device} | fold={fold} | split='{split}'")
+    log.info(f"Evaluating on: {device} | model={model_type} | fold={fold} | split='{split}'")
 
-    wandb.init(
-        project  = cfg.PROJECT_NAME,
-        name     = f"{cfg.RUN_NAME}_fold{fold}_eval_{split}",
-        group    = cfg.RUN_NAME,
-        job_type = "eval",
-        config   = {"fold": fold, "split": split,
-                    "output_activation": cfg.OUTPUT_ACTIVATION},
+    model, cfg, checkpoint, wandb_extra = _load_model_and_cfg(
+        model_type, fold, run_name=run_name, activation=activation, device=device,
     )
-
-    ckpt_path = cfg.CKPT_DIR / f"{cfg.RUN_NAME}_fold{fold}_best.pt"
-    if not ckpt_path.exists():
-        raise FileNotFoundError(
-            f"No checkpoint found at {ckpt_path}. Train fold {fold} first."
-        )
-    checkpoint = torch.load(ckpt_path, map_location=device)
-
-    model = UNet3d(
-        in_channels       = cfg.INPUT_NC,
-        out_channels      = cfg.OUTPUT_NC,
-        channels          = cfg.CHANNELS,
-        strides           = cfg.STRIDES,
-        num_res_units     = cfg.NUM_RES_UNITS,
-        output_activation = cfg.OUTPUT_ACTIVATION,
-    ).to(device)
-    state_key = "model" if "model" in checkpoint else "generator"
-    model.load_state_dict(checkpoint[state_key])
     model.eval()
 
     log.info(
         f"Loaded checkpoint — epoch {checkpoint['epoch']} | "
         f"best_val_L1={checkpoint['best_val_loss']:.4f} "
         f"(= {checkpoint['best_val_loss'] * DOSE_SCALE:.2f} Gy body-masked MAE)"
+    )
+
+    wandb.init(
+        project  = cfg.PROJECT_NAME,
+        name     = f"{cfg.RUN_NAME}_fold{fold}_eval_{split}",
+        group    = cfg.RUN_NAME,
+        job_type = "eval",
+        config   = {"fold": fold, "split": split, "model": model_type, **wandb_extra},
     )
 
     ds = LUNDPROBEDataset(
@@ -92,8 +137,8 @@ def evaluate(fold: int, split: str, skip_gamma: bool = False) -> None:
             real_input = batch["input"].to(device)
             real_dose  = batch["dose"].to(device)
 
-            t0        = time.perf_counter()
-            pred_dose = model(real_input)
+            t0           = time.perf_counter()
+            pred_dose    = model(real_input)
             inference_ms = (time.perf_counter() - t0) * 1000
 
             pred_gy = pred_dose[0, 0].cpu().numpy() * DOSE_SCALE
@@ -105,7 +150,6 @@ def evaluate(fold: int, split: str, skip_gamma: bool = False) -> None:
             bladder_mask     = batch["bladder_mask"][0, 0].numpy()
             penile_bulb_mask = real_input[0, 6].cpu().numpy()
 
-            # ---- voxel-level ------------------------------------------------
             body_mae  = compute_mae(pred_gy,  true_gy, body_mask)
             body_rmse = compute_rmse(pred_gy, true_gy, body_mask)
             ptv_mae   = compute_mae(pred_gy,  true_gy, ptv_mask)
@@ -115,27 +159,23 @@ def evaluate(fold: int, split: str, skip_gamma: bool = False) -> None:
             blad_mae  = compute_mae(pred_gy,  true_gy, bladder_mask)
             blad_rmse = compute_rmse(pred_gy, true_gy, bladder_mask)
 
-            # ---- DVH endpoints ----------------------------------------------
             ptv_dvh         = dvh_endpoints(pred_gy, true_gy, ptv_mask)
             rectum_dvh      = dvh_endpoints(pred_gy, true_gy, rectum_mask)
             bladder_dvh     = dvh_endpoints(pred_gy, true_gy, bladder_mask)
             penile_bulb_dvh = dvh_endpoints(pred_gy, true_gy, penile_bulb_mask)
 
-            # ---- boundary MAE -----------------------------------------------
             bnd_ptv  = compute_boundary_mae(pred_gy, true_gy, ptv_mask)
             bnd_rect = compute_boundary_mae(pred_gy, true_gy, rectum_mask) \
                        if (rectum_mask > 0.5).sum() > 0 else float("nan")
             bnd_blad = compute_boundary_mae(pred_gy, true_gy, bladder_mask) \
                        if (bladder_mask > 0.5).sum() > 0 else float("nan")
 
-            # ---- V_prescription ---------------------------------------------
-            presc = compute_D95(true_gy, ptv_mask)
+            presc             = compute_D95(true_gy, ptv_mask)
             v_presc_rect_pred = compute_Vx(pred_gy, rectum_mask,  presc)
             v_presc_rect_true = compute_Vx(true_gy, rectum_mask,  presc)
             v_presc_blad_pred = compute_Vx(pred_gy, bladder_mask, presc)
             v_presc_blad_true = compute_Vx(true_gy, bladder_mask, presc)
 
-            # ---- gamma ------------------------------------------------------
             if skip_gamma:
                 gamma_3_3 = float("nan")
                 gamma_2_2 = float("nan")
@@ -145,7 +185,6 @@ def evaluate(fold: int, split: str, skip_gamma: bool = False) -> None:
                 gamma_2_2 = compute_gamma_passrate(pred_gy, true_gy, body_mask,
                                                    dose_percent=2.0, distance_mm=2.0)
 
-            # ---- isodose Dice + HD95 ----------------------------------------
             isodose = compute_isodose_metrics(pred_gy, true_gy, ptv_mask)
 
             row = {
@@ -153,6 +192,7 @@ def evaluate(fold: int, split: str, skip_gamma: bool = False) -> None:
                 "acquisition_group":       acq_map.get(patient_id, "unknown"),
                 "split":                   split,
                 "fold":                    fold,
+                "model":                   model_type,
                 "inference_time_ms":       inference_ms,
                 "body_MAE_Gy":             body_mae,
                 "body_RMSE_Gy":            body_rmse,
@@ -190,7 +230,7 @@ def evaluate(fold: int, split: str, skip_gamma: bool = False) -> None:
                 f"gamma 3/3={gamma_3_3:.1f}%"
             )
 
-    out_dir = Path("outputs/evaluation")
+    out_dir  = Path("outputs/evaluation")
     out_dir.mkdir(parents=True, exist_ok=True)
     out_path = out_dir / f"{cfg.RUN_NAME}_fold{fold}_{split}.csv"
 
@@ -207,12 +247,12 @@ def evaluate(fold: int, split: str, skip_gamma: bool = False) -> None:
 
     log.info("\n── Overall (" + split + ") ───────────────────────────────────")
     for key, label in [
-        ("body_MAE_Gy",  "body MAE  "),
-        ("body_RMSE_Gy", "body RMSE "),
-        ("ptv_MAE_Gy",   "PTV  MAE  "),
-        ("gamma_3pct_3mm", "gamma 3/3 "),
-        ("gamma_2pct_2mm", "gamma 2/2 "),
-        ("boundary_MAE_ptv_Gy", "bnd MAE PTV"),
+        ("body_MAE_Gy",            "body MAE   "),
+        ("body_RMSE_Gy",           "body RMSE  "),
+        ("ptv_MAE_Gy",             "PTV  MAE   "),
+        ("gamma_3pct_3mm",         "gamma 3/3  "),
+        ("gamma_2pct_2mm",         "gamma 2/2  "),
+        ("boundary_MAE_ptv_Gy",    "bnd MAE PTV"),
     ]:
         vals = [r[key] for r in rows]
         log.info(f"  {label}: {np.nanmean(vals):.3f} ± {np.nanstd(vals):.3f}")
@@ -259,22 +299,34 @@ def evaluate(fold: int, split: str, skip_gamma: bool = False) -> None:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        description="Evaluate U-Net on the validation split."
+        description="Evaluate DoseGAN or U-Net on the validation (or test) split."
     )
-    parser.add_argument("--fold", type=int, default=cfg.FOLD,
-                        help="Which fold's checkpoint to load (default: cfg.FOLD)")
-    parser.add_argument("--activation", choices=["sigmoid", "tanh"], default=None,
-                        help="Override cfg.OUTPUT_ACTIVATION.")
+    parser.add_argument("--model", choices=["dosegan", "unet3d"], required=True,
+                        help="Which model to evaluate.")
+    parser.add_argument("--fold", type=int, default=None,
+                        help="Fold checkpoint to load (default: cfg.FOLD).")
     parser.add_argument("--run-name", dest="run_name", type=str, default=None,
-                        help="Override cfg.RUN_NAME, e.g. to evaluate a non-default checkpoint.")
+                        help="Override cfg.RUN_NAME.")
+    parser.add_argument("--activation", choices=["sigmoid", "tanh"], default=None,
+                        help="Override cfg.OUTPUT_ACTIVATION (U-Net only).")
     parser.add_argument("--skip-gamma", dest="skip_gamma", action="store_true",
                         help="Skip gamma pass rate (expensive 3D computation).")
     args = parser.parse_args()
 
-    if args.activation is not None:
-        cfg.RUN_NAME          = cfg.RUN_NAME.replace(cfg.OUTPUT_ACTIVATION, args.activation)
-        cfg.OUTPUT_ACTIVATION = args.activation
-    if args.run_name is not None:
-        cfg.RUN_NAME = args.run_name
+    if args.fold is None:
+        if args.model == "dosegan":
+            from configs import config_dosegan as _cfg
+        else:
+            from configs import config_unet3d as _cfg
+        fold = _cfg.FOLD
+    else:
+        fold = args.fold
 
-    evaluate(fold=args.fold, split="val", skip_gamma=args.skip_gamma)
+    evaluate(
+        model_type  = args.model,
+        fold        = fold,
+        split       = "val",
+        run_name    = args.run_name,
+        activation  = args.activation,
+        skip_gamma  = args.skip_gamma,
+    )
