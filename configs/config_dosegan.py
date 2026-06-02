@@ -16,9 +16,7 @@ CKPT_DIR   = Path("outputs/checkpoints_dosegan")
 # Change RUN_NAME when you change anything meaningful — this is what shows
 # up in the W&B dashboard so you can tell runs apart at a glance.
 PROJECT_NAME = "doseprediction-lundprobe"
-# For geom experiment: set USE_GEOM_CHANNELS=True, INPUT_NC=14,
-# RUN_NAME="dosegan_ngf32_sigmoid_geom_snellius"
-RUN_NAME     = "dosegan_ngf32_sigmoid_snellius"   # fold number appended at runtime
+RUN_NAME     = "dosegan_ngf32_sigmoid_geom_snellius"   # fold number appended at runtime
 
 # ── Cross-validation ───────────────────────────────────────────────────────
 FOLD = 0  # which fold is held out as validation this run (0–4)
@@ -31,8 +29,8 @@ BATCH_SIZE  = 1    # 3D volumes — batch size 1 is standard
 NUM_WORKERS = 4    # reduce to 0 if DataLoader throws errors on Windows
 
 # ── Model architecture ─────────────────────────────────────────────────────
-INPUT_NC  = 9   # 9 without geom (8 masks + sCT); 14 with geom (+ 5 geom channels)
-USE_GEOM_CHANNELS = False   # set True + INPUT_NC=14 + update RUN_NAME for geom experiment
+INPUT_NC  = 14  # 9 without geom (8 masks + sCT); 14 with geom (+ 5 geom channels)
+USE_GEOM_CHANNELS = True
 OUTPUT_NC = 1   # predicted dose volume
 NGF       = 32  # base number of generator filters — doubles at each U-Net level
 NDF       = 32  # base number of discriminator filters
