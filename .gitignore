@@ -36,6 +36,7 @@ nika/
 docs/*
 !docs/thesis_reporting_tracker.md
 !docs/literature_comparison.md
+!docs/results_validation.md
 thesis_template
 CLAUDE.md
 .claude/

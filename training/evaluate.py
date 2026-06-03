@@ -51,10 +51,13 @@ def _wandb_summary_stats(wandb_run, key: str, values: list) -> None:
 
 
 def _load_model_and_cfg(model_type: str, fold: int, run_name=None,
-                        activation=None, device=None):
+                        activation=None, device=None, use_geom=None):
     if model_type == "dosegan":
         from configs import config_dosegan as cfg
         from models.dosegan import UnetGenerator3d
+        if use_geom is not None:
+            cfg.USE_GEOM_CHANNELS = use_geom
+            cfg.INPUT_NC = 14 if use_geom else 9
         if run_name:
             cfg.RUN_NAME = run_name
         ckpt_path = cfg.CKPT_DIR / f"{cfg.RUN_NAME}_fold{fold}_best.pt"
@@ -71,6 +74,9 @@ def _load_model_and_cfg(model_type: str, fold: int, run_name=None,
     else:
         from configs import config_unet3d as cfg
         from models.unet3d import UNet3d
+        if use_geom is not None:
+            cfg.USE_GEOM_CHANNELS = use_geom
+            cfg.INPUT_NC = 14 if use_geom else 9
         if activation is not None:
             cfg.RUN_NAME = cfg.RUN_NAME.replace(cfg.OUTPUT_ACTIVATION, activation)
             cfg.OUTPUT_ACTIVATION = activation
@@ -98,14 +104,21 @@ def _load_model_and_cfg(model_type: str, fold: int, run_name=None,
 
 
 def evaluate(model_type: str, fold: int, split: str,
-             run_name=None, activation=None, skip_gamma: bool = False) -> None:
+             run_name=None, activation=None, skip_gamma: bool = False,
+             use_geom=None) -> None:
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     log.info(f"Evaluating on: {device} | model={model_type} | fold={fold} | split='{split}'")
 
     model, cfg, checkpoint, wandb_extra = _load_model_and_cfg(
         model_type, fold, run_name=run_name, activation=activation, device=device,
+        use_geom=use_geom,
     )
     model.eval()
+
+    out_path = Path("outputs/evaluation") / f"{cfg.RUN_NAME}_fold{fold}_{split}.csv"
+    if out_path.exists():
+        log.info(f"Output already exists, skipping: {out_path}")
+        return
 
     log.info(
         f"Loaded checkpoint — epoch {checkpoint['epoch']} | "
@@ -230,10 +243,7 @@ def evaluate(model_type: str, fold: int, split: str,
                 f"gamma 3/3={gamma_3_3:.1f}%"
             )
 
-    out_dir  = Path("outputs/evaluation")
-    out_dir.mkdir(parents=True, exist_ok=True)
-    out_path = out_dir / f"{cfg.RUN_NAME}_fold{fold}_{split}.csv"
-
+    out_path.parent.mkdir(parents=True, exist_ok=True)
     with open(out_path, "w", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=rows[0].keys())
         writer.writeheader()
@@ -311,6 +321,8 @@ if __name__ == "__main__":
                         help="Override cfg.OUTPUT_ACTIVATION (U-Net only).")
     parser.add_argument("--skip-gamma", dest="skip_gamma", action="store_true",
                         help="Skip gamma pass rate (expensive 3D computation).")
+    parser.add_argument("--no-geom", dest="no_geom", action="store_true", default=False,
+                        help="Force baseline mode: USE_GEOM_CHANNELS=False, INPUT_NC=9.")
     args = parser.parse_args()
 
     if args.fold is None:
@@ -329,4 +341,5 @@ if __name__ == "__main__":
         run_name    = args.run_name,
         activation  = args.activation,
         skip_gamma  = args.skip_gamma,
+        use_geom    = False if args.no_geom else None,
     )
