@@ -112,15 +112,35 @@ def build_input(data: dict, input_nc: int, use_geom: bool, device) -> torch.Tens
     return inp.unsqueeze(0).to(device)   # (1, C, D, H, W)
 
 
+def _uses_batchnorm(state_dict: dict) -> bool:
+    """Detect if a checkpoint was saved with BatchNorm (has running_mean keys)."""
+    return any("running_mean" in k for k in state_dict)
+
+
 def load_model(ckpt_path: Path, model_type: str, input_nc: int, device):
+    import functools
+    import torch.nn as nn
+
     ckpt = torch.load(ckpt_path, map_location=device)
+
     if model_type == "dosegan":
         from configs import config_dosegan as cfg
         from models.dosegan import UnetGenerator3d
+        sd = ckpt["generator"]
+        # match the norm layer to what the checkpoint was actually trained with
+        if _uses_batchnorm(sd):
+            norm_layer = nn.BatchNorm3d
+        else:
+            norm_layer = functools.partial(nn.InstanceNorm3d, affine=True)
         net = UnetGenerator3d(
-            input_nc=input_nc, output_nc=cfg.OUTPUT_NC, ngf=cfg.NGF
+            input_nc=input_nc, output_nc=cfg.OUTPUT_NC, ngf=cfg.NGF,
+            norm_layer=norm_layer,
         ).to(device)
-        net.load_state_dict(ckpt["generator"])
+        missing, unexpected = net.load_state_dict(sd, strict=False)
+        # only running stats should be unexpected (BN checkpoint loaded into IN model)
+        bad = [k for k in unexpected if "running_" not in k and "num_batches" not in k]
+        if bad:
+            raise RuntimeError(f"Unexpected non-running-stat keys: {bad}")
     else:
         from configs import config_unet3d as cfg
         from models.unet3d import UNet3d
@@ -131,17 +151,24 @@ def load_model(ckpt_path: Path, model_type: str, input_nc: int, device):
             output_activation=cfg.OUTPUT_ACTIVATION,
         ).to(device)
         key = "model" if "model" in ckpt else "generator"
-        net.load_state_dict(ckpt[key])
+        sd = ckpt[key]
+        missing, unexpected = net.load_state_dict(sd, strict=False)
+        bad = [k for k in unexpected if "running_" not in k and "num_batches" not in k]
+        if bad:
+            raise RuntimeError(f"Unexpected non-running-stat keys: {bad}")
+
     net.eval()
-    epoch = ckpt.get("epoch", "?")
+    epoch  = ckpt.get("epoch", "?")
     val_l1 = ckpt.get("best_val_loss", float("nan"))
-    print(f"  Loaded {ckpt_path.name}  epoch={epoch}  val_L1={val_l1:.4f}")
+    norm_name = "BN" if (model_type == "dosegan" and _uses_batchnorm(ckpt.get("generator", {}))) else "IN"
+    print(f"  Loaded {ckpt_path.name}  epoch={epoch}  val_L1={val_l1:.4f}  norm={norm_name}")
     return net
 
 
-def ptv_centroid_z(ptv_mask: np.ndarray) -> int:
-    vox = np.argwhere(ptv_mask > 0.5)
-    return int(vox[:, 0].mean()) if len(vox) > 0 else ptv_mask.shape[0] // 2
+def best_ptv_slice(ptv_mask: np.ndarray) -> int:
+    """Return the axial slice where the PTV cross-section area is largest."""
+    areas = [(ptv_mask[z] > 0.5).sum() for z in range(ptv_mask.shape[0])]
+    return int(np.argmax(areas)) if max(areas) > 0 else ptv_mask.shape[0] // 2
 
 
 def draw_contours(ax, masks: dict, z: int) -> None:
@@ -174,14 +201,14 @@ inp_arr   = data["input"]   # (9, D, H, W) or more
 sct       = inp_arr[8]      # sCT is channel 8
 
 masks = {
-    "ptv":     inp_arr[0],
-    "rectum":  inp_arr[2],
-    "bladder": inp_arr[3],
-    "body":    inp_arr[7],
+    "ptv":     inp_arr[0],  # ch 0 = PTVT_427
+    "rectum":  inp_arr[1],  # ch 1 = Rectum
+    "bladder": inp_arr[2],  # ch 2 = Bladder
+    "body":    inp_arr[7],  # ch 7 = BODY
 }
 
-z = ptv_centroid_z(masks["ptv"])
-print(f"PTV centroid slice z = {z}")
+z = best_ptv_slice(masks["ptv"])
+print(f"Best PTV slice z = {z}")
 
 # run inference for all 4 conditions
 preds = []
@@ -285,7 +312,7 @@ fig.legend(handles=legend_handles, loc="lower center", ncol=3,
 acq_group = patient_id.split("_")[0]
 fig.suptitle(
     f"Dose distribution comparison — fold {fold}  |  patient: {patient_id}  "
-    f"({acq_group})  |  axial slice z = {z}",
+    f"({acq_group})  |  axial slice z = {z}  (max PTV cross-section)",
     fontsize=9.5, y=1.01
 )
 
