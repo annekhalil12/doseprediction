@@ -2,7 +2,7 @@
 
 Working document. Update as runs complete and sections are drafted.
 
-Last updated: 2026-05-22
+Last updated: 2026-06-03
 
 ---
 
@@ -13,7 +13,10 @@ Last updated: 2026-05-22
 - [x] U-Net Tanh — 5-fold trained + evaluated (val)
 - [x] DoseGAN Tanh — 5-fold trained + evaluated (val)
 - [x] DoseGAN Sigmoid — 5-fold trained + evaluated (val)
-- [x] 2x2 activation ablation (U-Net x DoseGAN, Tanh vs Sigmoid) — decision: Sigmoid wins for both
+- [x] U-Net Sigmoid geom — 5-fold trained + evaluated (val, 2026-06-03)
+- [x] DoseGAN Sigmoid geom — 5-fold trained + evaluated (val, 2026-06-03)
+- [x] 2x2 activation ablation (U-Net × DoseGAN, Tanh vs Sigmoid) — decision: Sigmoid wins for both
+- [x] Full clinical evaluation suite run on all 4 conditions — body MAE, PTV/OAR DVH, isodose Dice+HD95, boundary MAE (2026-06-03). Results in `docs/results_validation.md`
 - [x] Investigation 1 (acquisition group breakdown) — U-Net Sigmoid + DoseGAN Sigmoid
 - [x] Investigation 2 (worst-case patient visualisations) — U-Net Sigmoid + DoseGAN Sigmoid
 - [x] Investigation 3 (dose-smearing index) — code exists, run on DoseGAN Tanh only
@@ -23,19 +26,18 @@ Last updated: 2026-05-22
 - [x] Penile Bulb evaluation added to both eval scripts
 - [x] DVH regularisation loss implemented — `structure_dmean_loss(PTV + Bladder + Rectum)`, LAMBDA_DVH (5.0 DoseGAN, 0.1 U-Net)
 - [x] DVH early stopping implemented — monitors `val_dvh_score = mean|Δ PTV D95| + mean|Δ Bladder Dmean| + mean|Δ Rectum Dmean|` in Gy
-- [x] Gradient-magnitude loss implemented (MAE on per-axis finite differences). LAMBDA_GRAD=10.0 was worse than baseline; lowered to 1.0
-- [x] Full clinical evaluation suite implemented — `training/metrics.py`: boundary MAE (±20 mm), gamma pass rate (3%/3mm + 2%/2mm), isodose Dice + HD95, D01cc, V_prescription, structure-level MAE/RMSE. Both eval scripts updated.
-- [x] **Scope decision (2026-05-22): thesis is a 2-model comparison (U-Net vs DoseGAN). DoseGNN and geometric channels are out of scope.**
+- [x] Gradient-magnitude loss implemented and tested (LAMBDA_GRAD=10.0 worse; LAMBDA_GRAD=1.0 fold 0 tested — negative result; documented as M19)
 
 ### Pending
-- [ ] Gradient-loss fold 0 result with LAMBDA_GRAD=1.0 (jobs 23059382, 23059383 running)
-- [ ] Run full evaluation with new metric suite on baseline 5-fold checkpoints (U-Net Sigmoid + DoseGAN Sigmoid)
-- [ ] Investigation 3 at scale — both baseline models
-- [ ] Test-set evaluation for final models
+- [ ] Ablation A1: boundary-weighted loss — fold 0 both models (see Section 8)
+- [ ] Ablation A2: signed distance map input — fold 0 both models (see Section 8)
+- [ ] Ablation A3: multi-scale discriminator — fold 0 DoseGAN only (see Section 8)
+- [ ] Investigation 3 at scale — U-Net Sigmoid + DoseGAN Sigmoid baselines
+- [ ] Gamma pass rate (3%/3mm, 2%/2mm) on full val set — deferred until GPU time available
+- [ ] Test-set evaluation for final models — locked until all ablations complete
 
 ### Blocked
-- ~~DoseGNN~~ — dropped from scope (2026-05-22)
-- ~~Geometric channels 8–14~~ — dropped from scope (2026-05-22)
+- ~~DoseGNN~~ — dropped from scope; collaborator stopped development (2026-05-22)
 
 ---
 
@@ -62,6 +64,9 @@ Last updated: 2026-05-22
 | M16 | DVH regularisation loss: `structure_dmean_loss(PTV) + structure_dmean_loss(Bladder) + structure_dmean_loss(Rectum)`, weighted λ_dvh (5.0 DoseGAN, 0.1 U-Net) — added to generator loss; from Kearney et al. 2020 | IMPLEMENTED — applies to next re-train | `training/train_dosegan.py`, `training/train_unet3d.py` |
 | M17 | DVH early stopping: model saved when `val_dvh_score = mean|Δ PTV D95| + mean|Δ Bladder Dmean| + mean|Δ Rectum Dmean|` (Gy) improves, not when body-masked L1 improves | IMPLEMENTED — applies to next re-train | `training/train_dosegan.py`, `training/train_unet3d.py` |
 | M18 | Penile Bulb evaluation: Dmean, Dmax, D95, D98, V20, V40 added to per-patient eval CSV; extracted from input channel 6; NaN for ~48 absent patients | IMPLEMENTED — applies on next evaluation run | `training/evaluate_dosegan.py`, `training/evaluate_unet3d.py` |
+| M20 | Boundary-weighted L1 loss: per-voxel weight map where ±20 mm PTV surface shell voxels get weight W, all other body voxels weight 1. Loss = body-masked weighted L1. Motivated by grad-magnitude failure (M19): targets the gradient where it matters clinically rather than all gradients uniformly. | PENDING — see Ablation A1 | `training/train_*.py` |
+| M21 | Signed distance map input: extra channel encoding signed Euclidean distance from PTV surface (negative inside, positive outside), clipped to ±50 mm and normalised to [−1, 1]. Computed on-the-fly from PTV mask (channel 0). Gives the model an explicit, continuous representation of where the dose boundary is. Distinct from the geom dist_ptv channel which is unsigned. | PENDING — see Ablation A2 | `training/dataset.py`, `training/train_*.py` |
+| M22 | Multi-scale discriminator (DoseGAN only): second NLayerDiscriminator applied to 2× spatially downsampled input (AvgPool3d kernel=2). Total D loss = 0.5*(L_D_fine + L_D_coarse); generator adversarial loss from both. Adds pressure on boundary realism at the scale of dose gradients (~5–15 mm), complementing the existing patch-level discriminator. | PENDING — see Ablation A3 | `models/dosegan.py`, `training/train_dosegan.py` |
 
 ---
 
@@ -218,10 +223,12 @@ All values are mean |Δ| (mean absolute error) as % of prescription dose (50 Gy)
 | D5 | Dose-smearing index: if R19 is run, provides a quantitative characterisation of the dominant failure mode | OPTIONAL | R19–R20 |
 | D6 | Limitations: val-set-only metrics until test-set eval, single dataset (prostate only), batch_size=1 with BatchNorm3d, no DoseGNN comparison (collaboration ended), geometric channels not implemented | READY | — |
 | D11 | Scope reduction: DoseGNN dropped because collaborator stopped development; geometric channels showed no benefit in collaborator's experiments. Honest reflection required. | READY to write | — |
-| D7 | Reflection: dose-smearing should be addressed at the loss level; DVH regularisation loss now implemented (M16); γ-pass-rate loss remains future work | READY | M16 |
+| D7 | Reflection: dose-smearing addressed at loss level — boundary-weighted L1 (A1, M20) is the concrete implemented attempt; gradient-magnitude loss tried and failed (M19); multi-scale discriminator and signed distance map are future work (M21, M22) | PENDING — update after ablation results | M19, M20, M21, M22 |
 | D8 | Inherited architectural quirks: PatchGAN tail BatchNorm+LeakyReLU, AttGate weight-tying — flagged as inherited, not corrected | READY | M7–M8 |
 | D9 | Comparison with prior literature — DVH table + acquisition-group breakdown added 2026-05-18 | READY | `docs/literature_comparison.md`, Section 3.5 |
 | D10 | Phase 2/3 outlook: transfer to pancreatic cohort, robustness under anatomical variation | READY | `docs/thesis_proposal.md` |
+| D12 | Future work — signed distance map (M21): targeted single-channel addition to address boundary shape without adding all 5 geom channels; computationally cheap, directly encodes what the model needs to get the falloff right | READY to write | M21 |
+| D13 | Future work — multi-scale discriminator (M22): adversarial pressure at the spatial scale of dose gradients (~5–15 mm); the current PatchGAN already helps vs U-Net on isodose Dice, and a second discriminator at coarser scale would push this further | READY to write | M22 |
 
 ---
 
@@ -265,28 +272,166 @@ Draft methods footnote:
 
 ## 6. Next Steps (priority order)
 
-**Thesis scope: U-Net vs DoseGAN only. Start writing now — 60–70% of the thesis is writable today.**
+**Current state (2026-06-03):** All 4 conditions fully evaluated on val set. Results in `docs/results_validation.md`. Ablation experiments (Section 8) are the next experimental priority.
 
-### Experiments (in order — do not start new ones)
-1. **Check grad1.0 fold 0 result** (jobs 23059382, 23059383). If val_L1 ≤ baseline → submit folds 1–4. If not → document as negative result and move on.
-2. **Run full evaluation on baseline 5-fold checkpoints** using updated eval scripts (new metrics: gamma, boundary MAE, isodose Dice, D01cc). `sbatch eval_dosegan.sbatch` + `sbatch eval_unet3d.sbatch`.
-3. **Run Inv3 at scale** on U-Net Sigmoid + DoseGAN Sigmoid: `python3 analysis/inv3_dose_smearing_index.py`
-4. **Test-set evaluation** once all training decisions are locked.
+### Experiments (in order)
+1. **Implement and run Ablation A1** (boundary-weighted loss, fold 0 both models) — lowest effort, highest thesis impact. See Section 8.
+2. **Implement and run Ablation A2** (signed distance map, fold 0 both models) — medium effort, informative regardless of outcome.
+3. **Run Inv3 at scale** on U-Net + DoseGAN Sigmoid baselines: `python3 analysis/inv3_dose_smearing_index.py`
+4. **If A1 or A2 is positive on fold 0** → submit folds 1–4 for that condition.
+5. **Ablation A3** (multi-scale discriminator, DoseGAN only) — implement only if time permits after A1+A2.
+6. **Test-set evaluation** once all training decisions are locked.
 
 ### Writing (start immediately — no experiments needed)
-- Introduction: thesis scope, motivation, 5 RQs
+- Introduction: thesis scope, motivation, RQs
 - Background: U-Net, attention gates, GANs, dose prediction literature, GhTara
 - Dataset: LUND-PROBE, 432 patients, acquisition groups, split rationale
 - Preprocessing: M1–M3
 - Methods — Architectures: M4–M9
-- Methods — Training: M10, M16, M17, M19
-- Methods — Evaluation: M11–M15, M19
+- Methods — Training: M10, M16, M17, M19, M20
+- Methods — Evaluation: M11–M15
 - Limitations (partial): D6, D11
 
-### Writing (needs eval results first)
-- Results 3.1 (main table): R1–R3, R22 (after eval run)
-- Results 3.6 (dose-smearing): R19–R20 (after Inv3)
-- Discussion D1, D5
+### Writing (needs results first)
+- Results 3.1 (main table + geom comparison): use `docs/results_validation.md`
+- Results 3.6 (dose-smearing): R19–R20 after Inv3
+- Results — ablation A1/A2: after fold 0 results
+- Discussion D1, D5, D7 (updated), D12, D13
+
+---
+
+---
+
+## 8. Ablation Experiments — Shape Problem
+
+**Motivation:** All four conditions achieve similar body MAE (~0.86 Gy) but U-Net fails almost completely on spatial dose accuracy (Dice 50iso = 0.043 vs DoseGAN geom 0.733). Even DoseGAN baseline is weak at 50iso (0.240). The models are getting the dose magnitudes right but not the shape of the dose distribution — specifically the falloff at the PTV boundary. Three concrete ablations address this in increasing order of implementation effort.
+
+---
+
+### A1: Boundary-Weighted L1 Loss
+
+**Motivation:** The gradient-magnitude loss (M19) penalised all spatial gradients uniformly and failed — it fires on every tissue boundary including artefacts. A boundary-weighted loss is more targeted: upweight only the ±20 mm PTV surface shell, which is exactly where the clinically critical dose falloff lives.
+
+**Implementation:**
+1. In the training loop, after loading the batch, compute a boundary mask from the PTV mask (channel 0):
+   ```python
+   from scipy.ndimage import binary_dilation, binary_erosion
+   ptv = input_tensor[:, 0]  # (B, D, H, W)
+   # 20 mm shell = 13 voxels at 1.5 mm/voxel
+   dilated  = binary_dilation(ptv.cpu().numpy(), iterations=13)
+   eroded   = binary_erosion(ptv.cpu().numpy(),  iterations=13)
+   bnd_mask = torch.tensor(dilated & ~eroded, device=device)
+   ```
+2. Build a per-voxel weight map: `weight = body_mask * (1.0 + (W - 1.0) * bnd_mask)` where W is the upweight factor.
+3. Weighted loss: `(torch.abs(pred - target) * weight).sum() / (weight.sum() + 1e-8)`
+4. Replace the existing `nn.L1Loss` body-MAE term with this weighted version. Keep val_L1 as unweighted body-masked MAE so folds stay comparable.
+
+**Hyperparameter:** Start with W = 5.0 (boundary voxels weighted 5× relative to other body voxels). If W=5 degrades body MAE > 0.05 Gy, try W = 2.0.
+
+**Config / RUN_NAME:**
+- DoseGAN: `dosegan_ngf32_sigmoid_bndw5_snellius`
+- U-Net: `unet3d_ch32_sigmoid_bndw5_snellius`
+
+**What to run:**
+| Step | Command | Gate |
+|---|---|---|
+| Fold 0 DoseGAN | `sbatch --export=... train_dosegan.sbatch` | always |
+| Fold 0 U-Net | `sbatch --export=... train_unet3d.sbatch` | always |
+| Eval fold 0 both | `sbatch eval.sbatch` | after training |
+| Folds 1–4 both | submit if fold 0 Dice_50iso improves | conditional |
+
+**Success criterion:** Dice_50iso improves by ≥ 0.05 AND body MAE does not increase > 0.05 Gy versus the baseline of the same model.
+
+**Primary eval metrics to compare:** Dice_50iso, Dice_100iso, HD95_100iso, boundary_MAE_ptv, body_MAE.
+
+**Thesis framing:** This is Investigation 3 / the shape-targeted intervention. Frame as: gradient-magnitude loss failed because it was non-specific; boundary-weighted loss is the targeted version. Result positive or negative both contribute to the thesis argument.
+
+---
+
+### A2: Signed Distance Map Input
+
+**Motivation:** The geom channels include an unsigned distance to PTV, which tells the model how far each voxel is from the PTV but not whether it is inside or outside. A signed distance map explicitly encodes the PTV boundary as a zero-crossing, giving the model a direct, continuous signal for where the falloff should be. This is a targeted single-channel addition, not a full 5-channel geom rerun.
+
+**Implementation:**
+Compute on-the-fly in `LUNDPROBEDataset.__getitem__`, after loading the input tensor:
+
+```python
+from scipy.ndimage import distance_transform_edt
+ptv_np = input_tensor[0].numpy()  # channel 0 = PTV mask, shape (D, H, W)
+dist_outside = distance_transform_edt(ptv_np == 0) * 1.5   # mm, positive outside
+dist_inside  = distance_transform_edt(ptv_np == 1) * 1.5   # mm, positive inside
+sdt = dist_outside - dist_inside                            # negative inside, positive outside
+sdt_clipped = np.clip(sdt, -50.0, 50.0) / 50.0             # normalised to [-1, 1]
+sdt_tensor  = torch.tensor(sdt_clipped, dtype=torch.float32).unsqueeze(0)  # (1, D, H, W)
+input_tensor = torch.cat([input_tensor, sdt_tensor], dim=0)  # now 10 channels
+```
+
+- No preprocessing changes needed — computed from the existing PTV mask.
+- `INPUT_NC = 10` for both models in their configs.
+- This is independent of the geom channels — it is a standalone 10-channel baseline variant.
+
+**Config / RUN_NAME:**
+- DoseGAN: `dosegan_ngf32_sigmoid_sdtptv_snellius`
+- U-Net: `unet3d_ch32_sigmoid_sdtptv_snellius`
+
+**What to run:**
+| Step | Command | Gate |
+|---|---|---|
+| Fold 0 DoseGAN | `sbatch ... train_dosegan.sbatch` | always |
+| Fold 0 U-Net | `sbatch ... train_unet3d.sbatch` | always |
+| Eval fold 0 both | `sbatch eval.sbatch` | after training |
+| Folds 1–4 both | submit if fold 0 Dice_50iso improves | conditional |
+
+**Success criterion:** Dice_50iso improves by ≥ 0.05 AND body MAE does not increase > 0.05 Gy. Secondary: does it close the gap between U-Net and DoseGAN on Dice_50iso?
+
+**Note on interpretation:** If A2 helps U-Net but A1 does not, it implies the model needs spatial context to produce the right gradient, not just penalty pressure. If neither helps U-Net but both help DoseGAN, it implies U-Net's L1 loss fundamentally cannot leverage spatial cues — the adversarial loss is necessary.
+
+---
+
+### A3: Multi-Scale Discriminator (DoseGAN only)
+
+**Motivation:** DoseGAN already benefits from adversarial training on spatial realism (Dice_100iso 0.899 vs U-Net 0.014 at baseline). A second discriminator operating at a coarser scale (~3 mm effective resolution after 2× downsampling) would add adversarial pressure specifically at the scale of dose gradients (5–15 mm), where the falloff errors are most visible.
+
+**Implementation:**
+In `models/dosegan.py`, add a second discriminator:
+
+```python
+class MultiScaleDiscriminator(nn.Module):
+    def __init__(self, input_nc, ndf=64, n_layers=3):
+        super().__init__()
+        self.disc_fine   = NLayerDiscriminator(input_nc, ndf, n_layers)
+        self.disc_coarse = NLayerDiscriminator(input_nc, ndf, n_layers)
+        self.downsample  = nn.AvgPool3d(kernel_size=2, stride=2)
+
+    def forward(self, x):
+        return self.disc_fine(x), self.disc_coarse(self.downsample(x))
+```
+
+Training loop changes:
+- `D_loss = 0.5 * (lsgan_d_loss(fine_real, fine_fake) + lsgan_d_loss(coarse_real, coarse_fake))`
+- `G_adv_loss = 0.5 * (lsgan_g_loss(fine_fake) + lsgan_g_loss(coarse_fake))`
+
+All other losses unchanged. Checkpoint saves the multi-scale discriminator state under `discriminator`.
+
+**Config / RUN_NAME:** `dosegan_ngf32_sigmoid_msd_snellius`
+
+**What to run:** Fold 0 only initially. Gate on Dice_50iso improvement before running folds 1–4.
+
+**Effort:** Medium — requires changes to `models/dosegan.py` and `training/train_dosegan.py`. Implement only after A1 and A2 results are in.
+
+**Thesis framing:** Future work if time runs out. If implemented: this is the architectural follow-up to the loss-level intervention, motivated by the fact that the PatchGAN already helps DoseGAN vs U-Net but does not fully solve the 50iso problem.
+
+---
+
+### A1/A2/A3 — Summary
+
+| Ablation | Models | Effort | Expected primary gain | Gate |
+|---|---|---|---|---|
+| A1: boundary-weighted L1 | DoseGAN + U-Net | Low (loss function, ~20 lines) | Dice_50iso, HD95 | None — run now |
+| A2: signed distance map | DoseGAN + U-Net | Low-medium (dataset change, new config key) | Dice_50iso, PTV MAE | None — run now |
+| A3: multi-scale disc. | DoseGAN only | Medium (model + training loop) | Dice_100iso, Dice_50iso | After A1+A2 |
+
+Run A1 and A2 in parallel on fold 0. Evaluate before committing to folds 1–4.
 
 ---
 
