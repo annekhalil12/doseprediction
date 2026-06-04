@@ -12,10 +12,9 @@ Run from the project root on Snellius:
 Output
 ------
 One .pkl file per patient in OUTPUT_DIR.
-A summary CSV is written to SUMMARY_CSV (= data/preprocessing_summary.csv).
+Failed patients are logged to stdout/stderr only.
 """
 
-import csv
 import logging
 import os
 import pickle
@@ -29,7 +28,7 @@ from tqdm import tqdm
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from configs.config_preprocessing_shared import DATA_ROOT, OUTPUT_DIR, SUMMARY_CSV, PreprocessingConfig
+from configs.config_preprocessing_shared import DATA_ROOT, OUTPUT_DIR, PreprocessingConfig
 from preprocessing.preprocessing import preprocess_patient
 
 N_WORKERS = int(os.environ.get("SLURM_CPUS_PER_TASK", 4))
@@ -109,17 +108,9 @@ def main():
                 bar.set_postfix(ok=n_success, skip=n_skipped, fail=n_failed)
                 bar.update(1)
 
-    summary_path = SUMMARY_CSV
-    summary_path.parent.mkdir(parents=True, exist_ok=True)
-    with open(summary_path, "w", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=["patient_id", "status", "error"])
-        writer.writeheader()
-        writer.writerows(results_log)
-
     total_min = (time.time() - t_start) / 60
     log.info("=" * 60)
     log.info(f"Finished in {total_min:.1f} min  |  OK={n_success}  skipped={n_skipped}  failed={n_failed}")
-    log.info(f"Summary CSV: {summary_path.resolve()}")
 
     if n_failed:
         log.info("Failed patients:")

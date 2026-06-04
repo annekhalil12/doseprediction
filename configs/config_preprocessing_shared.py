@@ -20,13 +20,11 @@ from typing import List, Tuple, Literal
 DATA_ROOT  = Path("/gpfs/scratch1/shared/akhalil/data/thesis-doseprediction/raw_data/lund-probe/lund-probe/basePart")
 
 # Preprocessed data products live under data/, separate from per-run outputs/.
-#   data/pickles/                 — one .pkl per patient
-#   data/split.csv                — committed train/val/test assignment
-#   data/preprocessing_summary.csv — committed preprocessing status per patient
-DATA_DIR    = Path("/gpfs/scratch1/shared/akhalil/data/thesis-doseprediction/data")
-OUTPUT_DIR  = DATA_DIR / "pickles"                    # backwards-compatible name
-SUMMARY_CSV = DATA_DIR / "preprocessing_summary.csv"
-SPLIT_CSV   = DATA_DIR / "split.csv"
+#   data/pickles/  — one .pkl per patient
+#   data/split.csv — committed train/val/test assignment
+DATA_DIR   = Path("/gpfs/scratch1/shared/akhalil/data/thesis-doseprediction/data")
+OUTPUT_DIR = DATA_DIR / "pickles"
+SPLIT_CSV  = DATA_DIR / "split.csv"
 
 # ---------------------------------------------------------------------------
 # Preprocessing parameters
