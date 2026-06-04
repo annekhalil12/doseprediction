@@ -59,6 +59,9 @@ def _load_model_and_cfg(model_type: str, fold: int, run_name=None,
         if use_geom is not None:
             cfg.USE_GEOM_CHANNELS = use_geom
             cfg.INPUT_NC = 14 if use_geom else 9
+        if activation is not None:
+            cfg.RUN_NAME = cfg.RUN_NAME.replace(cfg.OUTPUT_ACTIVATION, activation)
+            cfg.OUTPUT_ACTIVATION = activation
         if run_name:
             cfg.RUN_NAME = run_name
         ckpt_path = cfg.CKPT_DIR / f"{cfg.RUN_NAME}_fold{fold}_best.pt"
@@ -69,9 +72,10 @@ def _load_model_and_cfg(model_type: str, fold: int, run_name=None,
         checkpoint = torch.load(ckpt_path, map_location=device)
         model = UnetGenerator3d(
             input_nc=cfg.INPUT_NC, output_nc=cfg.OUTPUT_NC, ngf=cfg.NGF,
+            output_activation=cfg.OUTPUT_ACTIVATION,
         ).to(device)
         model.load_state_dict(checkpoint["generator"])
-        wandb_extra = {}
+        wandb_extra = {"output_activation": cfg.OUTPUT_ACTIVATION}
     else:
         from configs import config_unet3d as cfg
         from models.unet3d import UNet3d
