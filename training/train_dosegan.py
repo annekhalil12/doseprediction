@@ -343,6 +343,7 @@ def main():
         config_file     = "configs/config_dosegan.py",
         checkpoint_path = cfg.CKPT_DIR / f"{cfg.RUN_NAME}_fold{cfg.FOLD}_best.pt",
         eval_csv_path   = eval_csv,
+        seed            = 42,
     )
 
     generator = UnetGenerator3d(

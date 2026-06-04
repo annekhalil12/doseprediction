@@ -281,6 +281,7 @@ def main():
         config_file     = "configs/config_unet3d.py",
         checkpoint_path = cfg.CKPT_DIR / f"{cfg.RUN_NAME}_fold{cfg.FOLD}_best.pt",
         eval_csv_path   = eval_csv,
+        seed            = 42,
     )
     _manifest_start = None  # set after wandb.init
 
