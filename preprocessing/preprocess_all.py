@@ -5,9 +5,10 @@ Batch preprocessing runner for all 432 LUND-PROBE patients.
 
 Processes patients in parallel using ProcessPoolExecutor. Already-cached
 patients are skipped, so the job can be safely interrupted and resumed.
+Pass --force to overwrite existing pickles (required after any preprocessing change).
 
 Run from the project root on Snellius:
-    python preprocessing/preprocess_all.py
+    python preprocessing/preprocess_all.py [--force]
 
 Output
 ------
@@ -35,11 +36,11 @@ N_WORKERS = int(os.environ.get("SLURM_CPUS_PER_TASK", 4))
 
 
 def process_one(args):
-    patient_dir, output_dir, cfg = args
+    patient_dir, output_dir, cfg, force = args
     patient_id = patient_dir.name
     cache_path = Path(output_dir) / f"{patient_id}.pkl"
 
-    if cache_path.exists():
+    if cache_path.exists() and not force:
         return {"patient_id": patient_id, "status": "skipped", "error": "", "shape": None, "time": 0}
 
     try:
@@ -61,6 +62,12 @@ def process_one(args):
 
 
 def main():
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--force", action="store_true",
+                        help="Overwrite existing pickles (required after any preprocessing change).")
+    cli = parser.parse_args()
+
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
     log_path = OUTPUT_DIR / "preprocess_all.log"
@@ -75,6 +82,9 @@ def main():
     )
     log = logging.getLogger(__name__)
 
+    if cli.force:
+        log.warning("--force: existing pickles will be overwritten.")
+
     cfg          = PreprocessingConfig()
     patient_dirs = sorted([p for p in DATA_ROOT.iterdir() if p.is_dir()])
     n_total      = len(patient_dirs)
@@ -84,7 +94,7 @@ def main():
 
     log.info(f"Found {n_total} patients | workers={N_WORKERS} | output={OUTPUT_DIR.resolve()}")
 
-    args        = [(p, OUTPUT_DIR, cfg) for p in patient_dirs]
+    args        = [(p, OUTPUT_DIR, cfg, cli.force) for p in patient_dirs]
     results_log = []
     n_success = n_skipped = n_failed = 0
     t_start   = time.time()

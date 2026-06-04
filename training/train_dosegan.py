@@ -241,10 +241,10 @@ def main():
     args, _ = parser.parse_known_args()
     if args.fold is not None:
         cfg.FOLD = args.fold
-    if args.geom is not None:
-        cfg.USE_GEOM_CHANNELS = args.geom
     if args.flips is not None:
         cfg.USE_FLIPS = args.flips
+    if args.geom is not None:
+        cfg.USE_GEOM_CHANNELS = args.geom
         cfg.INPUT_NC = 14 if args.geom else 9
         if args.geom and "geom" not in cfg.RUN_NAME:
             cfg.RUN_NAME = cfg.RUN_NAME.replace("_snellius", "_geom_snellius")
