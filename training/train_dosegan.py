@@ -141,8 +141,10 @@ def train_one_epoch(
         loss_G = (loss_G_adv
                   + lambda_voxel * loss_G_voxel
                   + lambda_dvh   * loss_G_dvh)
+        loss_G_grad = 0.0
         if lambda_grad > 0.0:
-            loss_G = loss_G + lambda_grad * gradient_magnitude_loss(fake_dose, real_dose)
+            loss_G_grad = gradient_magnitude_loss(fake_dose, real_dose)
+            loss_G = loss_G + lambda_grad * loss_G_grad
 
         optimizer_G.zero_grad()
         loss_G.backward()
@@ -152,7 +154,7 @@ def train_one_epoch(
         total_loss_G    += loss_G.item()
         total_loss_L1   += loss_G_voxel.item()
         total_loss_dvh  += loss_G_dvh.item()
-        total_loss_grad += loss_G_grad.item()
+        total_loss_grad += loss_G_grad if isinstance(loss_G_grad, float) else loss_G_grad.item()
 
     n = len(dataloader)
     return {

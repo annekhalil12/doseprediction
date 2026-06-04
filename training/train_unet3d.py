@@ -91,9 +91,11 @@ def train_one_epoch(model, loader, optimizer, device, lambda_dvh, lambda_grad):
             structure_dmean_loss(pred, real_dose, bladder_mask) +
             structure_dmean_loss(pred, real_dose, rectum_mask)
         )
+        loss_grad = 0.0
         loss = loss_voxel + lambda_dvh * loss_dvh
         if lambda_grad > 0.0:
-            loss = loss + lambda_grad * gradient_magnitude_loss(pred, real_dose)
+            loss_grad = gradient_magnitude_loss(pred, real_dose)
+            loss = loss + lambda_grad * loss_grad
 
         optimizer.zero_grad()
         loss.backward()
@@ -101,7 +103,7 @@ def train_one_epoch(model, loader, optimizer, device, lambda_dvh, lambda_grad):
 
         total_l1   += loss_voxel.item()
         total_dvh  += loss_dvh.item()
-        total_grad += loss_grad.item()
+        total_grad += loss_grad if isinstance(loss_grad, float) else loss_grad.item()
 
     n = len(loader)
     return {
