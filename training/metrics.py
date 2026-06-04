@@ -4,11 +4,12 @@
 #
 # Functions
 # ---------
-#   compute_mae / compute_rmse    : voxel-level, optionally masked
-#   dvh_endpoints                 : full DVH dict per structure
-#   compute_boundary_mae          : MAE in 20 mm band around PTV/OAR surface (H2)
-#   compute_gamma_passrate        : 3D gamma, 3%/3mm and 2%/2mm
-#   compute_isodose_metrics       : Dice + HD95 at 100/95/80/50% isodose levels
+#   compute_mae / compute_rmse       : voxel-level, optionally masked
+#   dvh_endpoints                    : full DVH dict per structure
+#   compute_boundary_mae             : MAE in 20 mm band around PTV/OAR surface (H2)
+#   compute_gamma_passrate           : 3D gamma, 3%/3mm and 2%/2mm
+#   compute_isodose_metrics          : Dice + HD95 at 100/95/80/50% isodose levels (body-masked when body_mask given)
+#   compute_outside_body_leakage     : mean predicted dose and leakage volume fraction outside body
 
 from __future__ import annotations
 
@@ -210,6 +211,7 @@ def compute_isodose_metrics(
     pred_gy: np.ndarray,
     true_gy: np.ndarray,
     ptv_mask: np.ndarray,
+    body_mask: Optional[np.ndarray] = None,
     voxel_spacing_mm: float = VOXEL_SPACING_MM,
     isodose_levels: List[float] = [1.00, 0.95, 0.80, 0.50],
 ) -> Dict[str, float]:
@@ -218,7 +220,15 @@ def compute_isodose_metrics(
 
     Levels are expressed as fractions of the patient's prescription dose,
     defined as D95 of PTV from the ground-truth dose.
+
+    When body_mask is provided both pred and true are zeroed outside the body
+    before thresholding, preventing outside-body leakage from contaminating
+    the spatial metrics.
     """
+    if body_mask is not None:
+        body = body_mask > 0.5
+        pred_gy = np.where(body, pred_gy, 0.0)
+        true_gy = np.where(body, true_gy, 0.0)
     prescription = compute_D95(true_gy, ptv_mask)
     if prescription < 1e-6:
         return {}
@@ -233,3 +243,28 @@ def compute_isodose_metrics(
         metrics[f"Dice_{label}"]    = float(2 * inter / union) if union > 0 else 1.0
         metrics[f"HD95_{label}_mm"] = _hd95(pred_bin, true_bin, voxel_spacing_mm)
     return metrics
+
+
+def compute_outside_body_leakage(
+    pred_gy: np.ndarray,
+    body_mask: np.ndarray,
+    leakage_threshold_gy: float = 0.5,
+) -> Dict[str, float]:
+    """
+    Quantifies unphysical dose predicted outside the body contour.
+
+    Returns:
+      leakage_mean_pred_Gy  : mean predicted dose in outside-body voxels
+                              (should be ~0 for a physically correct model)
+      leakage_vol_frac      : fraction of outside-body voxels with pred >= threshold
+                              (default threshold = 0.5 Gy)
+    """
+    outside = body_mask < 0.5
+    n_outside = outside.sum()
+    if n_outside == 0:
+        return {"leakage_mean_pred_Gy": 0.0, "leakage_vol_frac": 0.0}
+    outside_pred = pred_gy[outside]
+    return {
+        "leakage_mean_pred_Gy": float(outside_pred.mean()),
+        "leakage_vol_frac":     float((outside_pred >= leakage_threshold_gy).sum() / n_outside),
+    }

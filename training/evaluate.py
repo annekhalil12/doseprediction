@@ -26,6 +26,7 @@ from training.metrics import (
     compute_boundary_mae,
     compute_gamma_passrate,
     compute_isodose_metrics,
+    compute_outside_body_leakage,
     compute_D95, compute_Vx,
 )
 
@@ -200,7 +201,8 @@ def evaluate(model_type: str, fold: int, split: str,
                 gamma_2_2 = compute_gamma_passrate(pred_gy, true_gy, body_mask,
                                                    dose_percent=2.0, distance_mm=2.0)
 
-            isodose = compute_isodose_metrics(pred_gy, true_gy, ptv_mask)
+            isodose  = compute_isodose_metrics(pred_gy, true_gy, ptv_mask, body_mask=body_mask)
+            leakage  = compute_outside_body_leakage(pred_gy, body_mask)
 
             row = {
                 "patient_id":              patient_id,
@@ -234,6 +236,7 @@ def evaluate(model_type: str, fold: int, split: str,
                 "gamma_3pct_3mm":          gamma_3_3,
                 "gamma_2pct_2mm":          gamma_2_2,
                 **isodose,
+                **leakage,
             }
             rows.append(row)
 
