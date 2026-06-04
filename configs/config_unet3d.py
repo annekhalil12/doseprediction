@@ -12,7 +12,7 @@ CKPT_DIR   = Path("outputs/checkpoints_unet3d")
 
 # ── Experiment identity ────────────────────────────────────────────────────
 PROJECT_NAME = "doseprediction-lundprobe"
-RUN_NAME     = "unet3d_ch32_sigmoid_geom_snellius"   # fold number appended at runtime
+RUN_NAME     = "unet3d_ch32_sigmoid_snellius"   # fold number appended at runtime
 
 # ── Cross-validation ───────────────────────────────────────────────────────
 FOLD = 0
@@ -23,8 +23,8 @@ BATCH_SIZE  = 1
 NUM_WORKERS = 4
 
 # ── Model architecture ─────────────────────────────────────────────────────
-INPUT_NC      = 14   # 9 without geom (8 masks + sCT); 14 with geom (+ 5 geom channels)
-USE_GEOM_CHANNELS = True
+INPUT_NC      = 9    # 9 without geom (8 masks + sCT); 14 with geom (+ 5 geom channels)
+USE_GEOM_CHANNELS = False
 OUTPUT_NC     = 1    # predicted dose
 CHANNELS      = (32, 64, 128, 256, 256, 256)  # feature maps at each U-Net level
 STRIDES       = (2, 2, 2, 2, 2)              # downsampling factor per transition

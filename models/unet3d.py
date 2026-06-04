@@ -23,8 +23,8 @@ class UNet3d(nn.Module):
         self,
         in_channels:       int   = 9,
         out_channels:      int   = 1,
-        channels:          tuple = (32, 64, 128, 256, 256),
-        strides:           tuple = (2, 2, 2, 2),
+        channels:          tuple = (32, 64, 128, 256, 256, 256),
+        strides:           tuple = (2, 2, 2, 2, 2),
         num_res_units:     int   = 2,
         output_activation: str   = "sigmoid",
     ):
