@@ -20,6 +20,7 @@ MODEL=${MODEL:-dosegan}
 FOLD=${FOLD:-0}
 RUN_NAME=${RUN_NAME:-}
 GEOM=${GEOM:-1}
+FORCE=${FORCE:-0}
 
 if   [ "$GEOM" = "1" ]; then GEOM_ARG="--geom"
 elif [ "$GEOM" = "0" ]; then GEOM_ARG="--no-geom"
@@ -29,11 +30,15 @@ fi
 RUN_NAME_ARG=""
 if [ -n "$RUN_NAME" ]; then RUN_NAME_ARG="--run-name $RUN_NAME"; fi
 
-echo "MODEL=$MODEL FOLD=$FOLD RUN_NAME=$RUN_NAME GEOM=$GEOM"
+FORCE_ARG=""
+if [ "$FORCE" = "1" ]; then FORCE_ARG="--force"; fi
+
+echo "MODEL=$MODEL FOLD=$FOLD RUN_NAME=$RUN_NAME GEOM=$GEOM FORCE=$FORCE"
 
 python3 -m training.evaluate \
     --model "$MODEL" \
     --fold "$FOLD" \
     $RUN_NAME_ARG \
     $GEOM_ARG \
+    $FORCE_ARG \
     --skip-gamma
