@@ -226,11 +226,23 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--fold", type=int, default=None,
                         help="Override cfg.FOLD (0–4). If omitted, uses value in config_dosegan.py.")
+    geom_group = parser.add_mutually_exclusive_group()
+    geom_group.add_argument("--geom",    dest="geom", action="store_true",  default=None,
+                            help="Force geom mode: USE_GEOM_CHANNELS=True, INPUT_NC=14.")
+    geom_group.add_argument("--no-geom", dest="geom", action="store_false",
+                            help="Force baseline mode: USE_GEOM_CHANNELS=False, INPUT_NC=9.")
     parser.add_argument("--overwrite", action="store_true",
                         help="Overwrite an existing best checkpoint instead of refusing to start.")
     args, _ = parser.parse_known_args()
     if args.fold is not None:
         cfg.FOLD = args.fold
+    if args.geom is not None:
+        cfg.USE_GEOM_CHANNELS = args.geom
+        cfg.INPUT_NC = 14 if args.geom else 9
+        if args.geom and "geom" not in cfg.RUN_NAME:
+            cfg.RUN_NAME = cfg.RUN_NAME.replace("_snellius", "_geom_snellius")
+        elif not args.geom and "_geom_" in cfg.RUN_NAME:
+            cfg.RUN_NAME = cfg.RUN_NAME.replace("_geom_", "_")
 
     cfg.CKPT_DIR.mkdir(parents=True, exist_ok=True)
     ckpt_path = cfg.CKPT_DIR / f"{cfg.RUN_NAME}_fold{cfg.FOLD}_best.pt"

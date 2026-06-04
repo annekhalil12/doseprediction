@@ -17,6 +17,13 @@ mkdir -p outputs/logs
 export PYTHONPATH=/gpfs/scratch1/shared/akhalil/data/thesis-doseprediction
 
 FOLD=${FOLD:-0}
+
 OVERWRITE_ARG=""
 if [ -n "${OVERWRITE:-}" ]; then OVERWRITE_ARG="--overwrite"; fi
-python3 training/train_dosegan.py --fold $FOLD $OVERWRITE_ARG
+
+if   [ "${GEOM:-}" = "1" ]; then GEOM_ARG="--geom"
+elif [ "${GEOM:-}" = "0" ]; then GEOM_ARG="--no-geom"
+else GEOM_ARG=""
+fi
+
+python3 training/train_dosegan.py --fold $FOLD $OVERWRITE_ARG $GEOM_ARG

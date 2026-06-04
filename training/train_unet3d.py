@@ -166,6 +166,11 @@ def main():
                         help="Override cfg.FOLD (0–4).")
     parser.add_argument("--activation", choices=["sigmoid", "tanh"], default=None,
                         help="Override cfg.OUTPUT_ACTIVATION. Rewrites the activation token in RUN_NAME.")
+    geom_group = parser.add_mutually_exclusive_group()
+    geom_group.add_argument("--geom",    dest="geom", action="store_true",  default=None,
+                            help="Force geom mode: USE_GEOM_CHANNELS=True, INPUT_NC=14.")
+    geom_group.add_argument("--no-geom", dest="geom", action="store_false",
+                            help="Force baseline mode: USE_GEOM_CHANNELS=False, INPUT_NC=9.")
     parser.add_argument("--overwrite", action="store_true",
                         help="Overwrite an existing best checkpoint instead of refusing to start.")
     args, _ = parser.parse_known_args()
@@ -175,6 +180,13 @@ def main():
         # Rewrite the activation token in RUN_NAME so W&B groups stay distinct.
         cfg.RUN_NAME = cfg.RUN_NAME.replace(cfg.OUTPUT_ACTIVATION, args.activation)
         cfg.OUTPUT_ACTIVATION = args.activation
+    if args.geom is not None:
+        cfg.USE_GEOM_CHANNELS = args.geom
+        cfg.INPUT_NC = 14 if args.geom else 9
+        if args.geom and "geom" not in cfg.RUN_NAME:
+            cfg.RUN_NAME = cfg.RUN_NAME.replace("_snellius", "_geom_snellius")
+        elif not args.geom and "_geom_" in cfg.RUN_NAME:
+            cfg.RUN_NAME = cfg.RUN_NAME.replace("_geom_", "_")
 
     cfg.CKPT_DIR.mkdir(parents=True, exist_ok=True)
     ckpt_path = cfg.CKPT_DIR / f"{cfg.RUN_NAME}_fold{cfg.FOLD}_best.pt"
