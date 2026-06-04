@@ -106,7 +106,7 @@ def _load_model_and_cfg(model_type: str, fold: int, run_name=None,
 
 def evaluate(model_type: str, fold: int, split: str,
              run_name=None, activation=None, skip_gamma: bool = False,
-             use_geom=None, force: bool = False) -> None:
+             use_geom=None, overwrite: bool = False) -> None:
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     log.info(f"Evaluating on: {device} | model={model_type} | fold={fold} | split='{split}'")
 
@@ -117,11 +117,13 @@ def evaluate(model_type: str, fold: int, split: str,
     model.eval()
 
     out_path = Path("outputs/evaluation") / f"{cfg.RUN_NAME}_fold{fold}_{split}.csv"
-    if out_path.exists() and not force:
-        log.info(f"Output already exists, skipping: {out_path}")
-        return
-    if out_path.exists() and force:
-        log.warning(f"--force: overwriting existing results: {out_path}")
+    if out_path.exists() and not overwrite:
+        raise FileExistsError(
+            f"Evaluation CSV already exists: {out_path}\n"
+            "Pass --overwrite to replace it."
+        )
+    if out_path.exists() and overwrite:
+        log.warning(f"--overwrite: replacing existing results: {out_path}")
 
     log.info(
         f"Loaded checkpoint — epoch {checkpoint['epoch']} | "
@@ -326,8 +328,9 @@ if __name__ == "__main__":
                         help="Override cfg.OUTPUT_ACTIVATION (U-Net only).")
     parser.add_argument("--skip-gamma", dest="skip_gamma", action="store_true",
                         help="Skip gamma pass rate (expensive 3D computation).")
-    parser.add_argument("--force", action="store_true",
-                        help="Overwrite existing evaluation CSV (required after retraining).")
+    parser.add_argument("--overwrite", action="store_true",
+                        help="Overwrite existing evaluation CSV. Without this flag the script "
+                             "raises FileExistsError if the CSV already exists.")
     geom_group = parser.add_mutually_exclusive_group()
     geom_group.add_argument("--geom",    dest="geom", action="store_true",  default=None,
                             help="Force geom mode: USE_GEOM_CHANNELS=True, INPUT_NC=14.")
@@ -352,5 +355,5 @@ if __name__ == "__main__":
         activation  = args.activation,
         skip_gamma  = args.skip_gamma,
         use_geom    = args.geom,
-        force       = args.force,
+        overwrite   = args.overwrite,
     )

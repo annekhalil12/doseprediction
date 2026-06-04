@@ -31,7 +31,7 @@ RUN_NAME_ARG=""
 if [ -n "$RUN_NAME" ]; then RUN_NAME_ARG="--run-name $RUN_NAME"; fi
 
 FORCE_ARG=""
-if [ "$FORCE" = "1" ]; then FORCE_ARG="--force"; fi
+if [ "$FORCE" = "1" ]; then FORCE_ARG="--overwrite"; fi
 
 echo "MODEL=$MODEL FOLD=$FOLD RUN_NAME=$RUN_NAME GEOM=$GEOM FORCE=$FORCE"
 
