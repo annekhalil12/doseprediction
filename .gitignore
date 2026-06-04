@@ -15,7 +15,6 @@ raw_data/
 # Preprocessed data — ignore bulk pickles, keep split + summary committed
 data/pickles/
 !data/split.csv
-!data/preprocessing_summary.csv
 data/zotero_library.json
 data/zotero_papers.json
 

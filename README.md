@@ -175,6 +175,7 @@ Both models accept `(9, 128, 256, 320)` input for the baseline condition and `(1
 
 `data/split.csv` is committed and must not be regenerated — it is the permanent record of train/val/test assignments. 15% held-out test set + 5-fold CV on the remainder, stratified by acquisition group (`oldAcq` / `newAcq`).
 
+
 ## Preprocessing
 
 Per patient: resample to 1.5 mm isotropic → z-score sCT inside body contour (HU window −990–2000) → normalise dose by 50 Gy → asymmetric PTV-centric crop (128×256×320: 40 slices below PTV centroid, 88 above). Optional structures (Genitalia, PenileBulb) zero-filled if absent.
