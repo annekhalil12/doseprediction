@@ -4,6 +4,7 @@
 # Hyperparameters live in configs/config_unet3d.py.
 
 import argparse
+import random
 import sys
 import logging
 from pathlib import Path
@@ -225,12 +226,19 @@ def main():
         }
     )
 
-    # Seed before DataLoader creation so worker subprocesses inherit a
-    # deterministic parent RNG; worker_init_fn below then offsets each
-    # worker so augmentation is reproducible across reruns.
+    # Seed all RNGs before DataLoader creation. MONAI's Rand* transforms draw
+    # from their own RNG (separate from PyTorch), so monai.utils.set_determinism
+    # is required for full reproducibility alongside the standard seeds.
+    random.seed(42)
+    np.random.seed(42)
     torch.manual_seed(42)
+    torch.cuda.manual_seed_all(42)
+    import monai.utils
+    monai.utils.set_determinism(seed=42)
 
     def _seed_worker(worker_id: int) -> None:
+        random.seed(42 + worker_id)
+        np.random.seed(42 + worker_id)
         torch.manual_seed(42 + worker_id)
 
     train_ds = LUNDPROBEDataset(
