@@ -4,10 +4,11 @@ preprocessing.py
 SimpleITK-based preprocessing pipeline for LUND-PROBE NIfTI data.
 Adapted from collaborator's preprocessingV5.py.
 
-Produces a 9-channel input tensor per patient (channels 0–7 and 15 from
-CHANNEL_MAP). Geometric channels 8–14 are skipped until V5geometric_channels.py
-is available. Pickles are marked with `geometric_channels_pending=True` so a
-separate script can append the missing channels without re-running this pipeline.
+Produces a 9-channel input tensor per patient (channels 0–7: structure masks,
+channel 8: sCT intensity). Geometric channels (5 additional features) are NOT
+produced here — they are appended to existing pickles by
+`preprocessing/add_geom_channels.py` and stored under the `geom_channels` key.
+Pickles are marked with `geometric_channels_pending=True` as a reminder flag.
 
 Pipeline per patient
 --------------------
@@ -431,9 +432,9 @@ def preprocess_patient(
     )
 
     # ── Stack available channels into input tensor ─────────────────────────
-    # Channels 0–7 (structure masks) + channel 15 (sCT intensity).
-    # Channels 8–14 (geometric features) are omitted until
-    # V5geometric_channels.py is available — see geometric_channels_pending flag.
+    # Channels 0–7 (structure masks) + channel 8 (sCT intensity) = 9 channels.
+    # Geometric channels are stored separately under 'geom_channels' by
+    # add_geom_channels.py and appended at load time by the dataset.
     available_channel_names = [AVAILABLE_CHANNELS[i] for i in sorted(AVAILABLE_CHANNELS)]
     input_tensor = np.stack(
         [crop[ch] for ch in available_channel_names], axis=0

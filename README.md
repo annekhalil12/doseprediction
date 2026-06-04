@@ -50,7 +50,7 @@ All 4 conditions use InstanceNorm(affine=True), Sigmoid output, LSGAN, 200 epoch
 | Model | Status | W&B group |
 |---|---|---|
 | U-Net Sigmoid | Complete — folds 0–4 | `unet3d_ch32_sigmoid_snellius` |
-| DoseGAN Sigmoid | Complete — folds 0–4 (retrained Jun 2026 with InstanceNorm) | `dosegan_ngf32_sigmoid_snellius` |
+| DoseGAN Sigmoid | Training complete — **evaluation CSVs pending re-run** (see Blocker 4 in `docs/final_validation_results.md`) | `dosegan_ngf32_sigmoid_snellius` |
 
 ### With-geom (14-channel) — complete
 | Model | Status | W&B group |
@@ -97,9 +97,9 @@ sbatch preprocessing/add_geom_channels.sbatch
 sbatch --export=ALL,FOLD=0 train_dosegan.sbatch          # baseline DoseGAN fold 0
 sbatch --export=ALL,FOLD=0 train_unet3d.sbatch           # baseline U-Net fold 0
 
-# Geom-channel variants (after setting USE_GEOM_CHANNELS=True in configs):
-for fold in 0 1 2 3 4; do FOLD=$fold sbatch train_dosegan.sbatch; done
-for fold in 0 1 2 3 4; do FOLD=$fold sbatch train_unet3d.sbatch; done
+# Geom-channel variants (--geom flag sets USE_GEOM_CHANNELS and INPUT_NC automatically):
+for fold in 0 1 2 3 4; do sbatch --export=ALL,FOLD=$fold,GEOM=1 train_dosegan.sbatch; done
+for fold in 0 1 2 3 4; do sbatch --export=ALL,FOLD=$fold,GEOM=1 train_unet3d.sbatch; done
 
 # ── Evaluation ─────────────────────────────────────────────────────────────
 # Via SLURM (recommended):
@@ -139,7 +139,7 @@ LUNDPROBEDataset → DataLoader
         ▼
 outputs/checkpoints_{dosegan,unet3d}/<run_name>_fold<F>_best.pt
         │
-        │  training/evaluate_{dosegan,unet3d}.py
+        │  training/evaluate.py
         ▼
 outputs/evaluation/<run_name>_fold<F>_val.csv
         │

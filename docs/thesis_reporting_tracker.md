@@ -2,7 +2,7 @@
 
 Working document. Update as runs complete and sections are drafted.
 
-Last updated: 2026-06-03
+Last updated: 2026-06-04
 
 ---
 
@@ -12,11 +12,11 @@ Last updated: 2026-06-03
 - [x] U-Net Sigmoid — 5-fold trained + evaluated (val)
 - [x] U-Net Tanh — 5-fold trained + evaluated (val)
 - [x] DoseGAN Tanh — 5-fold trained + evaluated (val)
-- [x] DoseGAN Sigmoid — 5-fold trained + evaluated (val)
+- [x] DoseGAN Sigmoid — 5-fold trained; **evaluation CSVs pending re-run** (submit: `MODEL=dosegan GEOM=0` × folds 0–4 via eval.sbatch)
 - [x] U-Net Sigmoid geom — 5-fold trained + evaluated (val, 2026-06-03)
 - [x] DoseGAN Sigmoid geom — 5-fold trained + evaluated (val, 2026-06-03)
 - [x] 2x2 activation ablation (U-Net × DoseGAN, Tanh vs Sigmoid) — decision: Sigmoid wins for both
-- [x] Full clinical evaluation suite run on all 4 conditions — body MAE, PTV/OAR DVH, isodose Dice+HD95, boundary MAE (2026-06-03). Results in `docs/results_validation.md`
+- [x] Full clinical evaluation suite run on 3/4 conditions (U-Net base, U-Net geom, DoseGAN geom). DoseGAN baseline pending. All existing CSVs need `--overwrite` re-run (isodose body-masking fix, 2026-06-04). Final results target: `docs/final_validation_results.md`
 - [x] Investigation 1 (acquisition group breakdown) — U-Net Sigmoid + DoseGAN Sigmoid
 - [x] Investigation 2 (worst-case patient visualisations) — U-Net Sigmoid + DoseGAN Sigmoid
 - [x] Investigation 3 (dose-smearing index) — code exists, run on DoseGAN Tanh only
@@ -79,7 +79,7 @@ Last updated: 2026-06-03
 |---|------|--------|--------|
 | R1 | Table: body_MAE_Gy and body_RMSE_Gy per model, mean ± std across 5 folds | PARTIAL — full eval with new metrics pending | `outputs/evaluation/*_fold*_val.csv` |
 | R2 | U-Net Sigmoid: body_MAE_Gy = 0.861 ± 0.026 Gy; body_RMSE_Gy = 1.514 ± 0.038 Gy | READY | `outputs/evaluation/unet3d_ch32_sigmoid_snellius_fold*_val.csv` |
-| R3 | DoseGAN Sigmoid: body_MAE_Gy = 0.868 ± 0.035 Gy; body_RMSE_Gy = 1.521 ± 0.045 Gy | READY | `outputs/evaluation/dosegan_ngf32_sigmoid_snellius_fold*_val.csv` |
+| R3 | DoseGAN Sigmoid: body_MAE_Gy = 0.868 ± 0.035 Gy; body_RMSE_Gy = 1.521 ± 0.045 Gy | PENDING RE-EVAL — CSVs missing; re-run once eval jobs complete | `outputs/evaluation/dosegan_ngf32_sigmoid_snellius_fold*_val.csv` |
 | R4 | ~~DoseGNN results~~ | DROPPED — out of scope (2026-05-22) | — |
 | R5 | Test-set results for all final models | PENDING | requires test-split eval |
 
