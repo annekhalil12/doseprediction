@@ -3,30 +3,63 @@
 # Usage: python -m preprocessing.check_pickle_shapes
 
 import pickle
+import sys
 from pathlib import Path
 
-pickle_dir = Path("data/pickles")
-pickles    = sorted(pickle_dir.glob("*.pkl"))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from configs.config_preprocessing_shared import OUTPUT_DIR
 
-print(f"Total pickles found: {len(pickles)}\n")
+EXPECTED_INPUT = (9, 128, 256, 320)
+EXPECTED_DOSE  = (128, 256, 320)
+EXPECTED_GEOM  = (5, 128, 256, 320)
 
-all_ok    = True
-bad_files = []
 
-for path in pickles:
-    with open(path, "rb") as f:
-        data = pickle.load(f)
+def main():
+    pickles = sorted(OUTPUT_DIR.glob("*.pkl"))
+    print(f"Total pickles found: {len(pickles)}\n")
 
-    input_shape = data["input"].shape
-    dose_shape  = data["dose"].shape
-    ok          = input_shape == (9, 128, 256, 320) and dose_shape == (128, 256, 320)
+    all_ok      = True
+    bad_files   = []
+    n_with_geom = 0
+    n_bad_geom  = 0
 
-    if not ok:
-        all_ok = False
-        bad_files.append((path.name, input_shape, dose_shape))
-        print(f"✗  {path.name}  input:{input_shape}  dose:{dose_shape}")
+    for path in pickles:
+        with open(path, "rb") as f:
+            data = pickle.load(f)
 
-if all_ok:
-    print(f"All {len(pickles)} pickles have correct shape — safe to train.")
-else:
-    print(f"\n{len(bad_files)} pickle(s) have wrong shape — do NOT train yet.")
+        input_shape = data["input"].shape
+        dose_shape  = data["dose"].shape
+        base_ok     = input_shape == EXPECTED_INPUT and dose_shape == EXPECTED_DOSE
+
+        geom_shape = data["geom_channels"].shape if "geom_channels" in data else None
+        geom_ok    = geom_shape == EXPECTED_GEOM if geom_shape is not None else True
+
+        if geom_shape is not None:
+            n_with_geom += 1
+            if not geom_ok:
+                n_bad_geom += 1
+
+        if not base_ok or not geom_ok:
+            all_ok = False
+            bad_files.append(path.name)
+            print(
+                f"✗  {path.name}"
+                f"  input:{input_shape}"
+                f"  dose:{dose_shape}"
+                + (f"  geom:{geom_shape}" if geom_shape is not None else "  geom:missing")
+            )
+
+    print(f"\nBaseline channels (9):  {len(pickles)} / {len(pickles)}")
+    print(f"Geom channels (5):      {n_with_geom} / {len(pickles)}")
+    if n_bad_geom:
+        print(f"Bad geom shapes:        {n_bad_geom}")
+
+    if all_ok:
+        print(f"\nAll {len(pickles)} pickles have correct shape — safe to train.")
+    else:
+        print(f"\n{len(bad_files)} pickle(s) have wrong shape — do NOT train yet.")
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()
