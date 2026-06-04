@@ -4,7 +4,7 @@
 **Models:** DoseGAN (GAN + L1 loss) and U-Net (L1 loss only)
 **Conditions:** baseline (9-channel: 8 structure masks + sCT) vs geom (14-channel: + 5 geometric channels)
 **Split:** 5-fold cross-validation on the train/val set (n ≈ 367 patients per condition)
-**Note:** gamma pass rate omitted (--skip-gamma; expensive 3D computation deferred to final evaluation)
+**Note:** Gamma pass rate (3%/3mm, 2%/2mm) was implemented in code but omitted from all evaluation runs (--skip-gamma) due to computational cost (~10 min/patient for 3D gamma). All gamma columns in the eval CSVs are NaN. Gamma analysis is not part of the main quantitative comparison and should be disclosed as a limitation.
 
 > **⚠ DG base column is stale.** The DoseGAN baseline checkpoints were retrained on 2026-06-04
 > with InstanceNorm(affine=True) to match the U-Net normalisation. The numbers in the DG base

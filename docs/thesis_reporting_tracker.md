@@ -58,7 +58,8 @@ Last updated: 2026-06-03
 | M11 | Metrics: body_MAE_Gy, body_RMSE_Gy computed over body-contour voxels (channel 7); same mask used during training for val_L1 | READY | `training/metrics.py`, `training/evaluate.py` |
 | M12 | Note: val_L1 redefined 2026-05-13 — pre-change values not comparable (conversion: new ≈ old / 0.32) | READY | commit a2c5cc7 |
 | M13 | Hardware and runtime: Snellius HPC, NVIDIA H100, wallclock per fold | READY | `outputs/logs/` |
-| M14 | Full clinical evaluation suite: boundary MAE (±20 mm PTV/OAR surface), gamma pass rate (3%/3mm + 2%/2mm), isodose Dice + HD95 (100/95/80/50%), D01cc, V_prescription for OARs | IMPLEMENTED | `training/metrics.py` |
+| M14 | Full clinical evaluation suite: boundary MAE (±20 mm PTV/OAR surface), isodose Dice + HD95 (100/95/80/50%), D01cc, V_prescription for OARs | IMPLEMENTED AND RUN | `training/metrics.py` |
+| M14b | Gamma pass rate (3%/3mm, 2%/2mm) | IMPLEMENTED in code, NOT RUN — omitted from all eval jobs via --skip-gamma due to computational cost (full 3D gamma is ~10 min/patient). Columns exist in CSVs but are all NaN. Reserved for supplementary evaluation. | `training/metrics.py` |
 | M15 | Investigation 3 metric: dose-smearing index (ratio of predicted to ground-truth dose gradient magnitude per patient) | READY — code exists, not yet run at scale | `analysis/inv3_dose_smearing_index.py` |
 | M19 | Gradient-magnitude loss: MAE on per-axis finite differences (dx, dy, dz), averaged across 3 directions, LAMBDA_GRAD=1.0 | IMPLEMENTED — fold 0 running | `training/train_dosegan.py`, `training/train_unet3d.py` |
 | M16 | DVH regularisation loss: `structure_dmean_loss(PTV) + structure_dmean_loss(Bladder) + structure_dmean_loss(Rectum)`, weighted λ_dvh (5.0 DoseGAN, 0.1 U-Net) — added to generator loss; from Kearney et al. 2020 | IMPLEMENTED — applies to next re-train | `training/train_dosegan.py`, `training/train_unet3d.py` |
@@ -208,7 +209,8 @@ All values are mean |Δ| (mean absolute error) as % of prescription dose (50 Gy)
 | # | Item | Status | Source |
 |---|------|--------|--------|
 | R21 | DVH curves per OAR and PTV | OPTIONAL | Not implemented — low priority |
-| R22 | Gamma pass rate (3%/3 mm, 2%/2 mm) + isodose Dice/HD95 + boundary MAE | IMPLEMENTED — needs eval run on checkpoints | `training/metrics.py`, `training/evaluate.py` |
+| R22 | Isodose Dice/HD95 + boundary MAE | COMPLETE — in all eval CSVs | `training/metrics.py`, `training/evaluate.py` |
+| R22b | Gamma pass rate (3%/3 mm, 2%/2 mm) | NOT RUN — all gamma columns are NaN in every eval CSV. Gamma analysis was implemented but omitted from the quantitative comparison due to computational cost (~10 min/patient for 3D gamma). Should be disclosed as a limitation; not listed as a completed result. | `training/metrics.py` |
 
 ---
 

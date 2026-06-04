@@ -113,4 +113,4 @@ All values mean |Δ| as % of 50 Gy prescription.
 | Bladder Dmean | 1.65% ± 1.37% | 1.73% ± 1.44% | **0.7%** | 1.8% |
 | Rectum Dmean | 2.54% ± 2.03% | 2.50% ± 2.04% | n/r | — |
 
-Gamma pass rate deferred (computationally expensive; run with `--skip-gamma` removed). Test-set evaluation locked until model selection is final.
+Gamma pass rate (3%/3mm, 2%/2mm) was implemented in `training/metrics.py` but omitted from all evaluation runs via `--skip-gamma` due to computational cost (~10 min/patient for full 3D gamma). All gamma columns in the eval CSVs are NaN. Gamma analysis is reserved for supplementary evaluation and is not part of the main quantitative comparison. Test-set evaluation locked until model selection is final.

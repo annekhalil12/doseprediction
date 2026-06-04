@@ -228,12 +228,14 @@ def fig_acquisition(data: dict) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Figure 5: New metrics — gamma, boundary MAE, isodose Dice
-# (only generated when new eval CSVs are present)
+# Figure 5: Boundary MAE + isodose Dice/HD95
+# Note: gamma pass rate (3%/3mm, 2%/2mm) was implemented but NOT run —
+# all gamma columns are NaN. Excluded from this figure and all quantitative
+# comparisons. Disclosed as a limitation in the thesis.
 # ---------------------------------------------------------------------------
 
 def fig_new_metrics(data: dict) -> None:
-    required = ["gamma_3pct_3mm", "boundary_MAE_ptv_Gy", "Dice_95iso"]
+    required = ["boundary_MAE_ptv_Gy", "Dice_95iso"]
     has_new = any(
         data.get(l) is not None and all(c in data[l].columns for c in required)
         for l in BASELINE_MODELS
@@ -243,13 +245,16 @@ def fig_new_metrics(data: dict) -> None:
         print("  Run eval.sbatch (with GEOM=0) first, then re-run this script.")
         return
 
+    # Gamma columns are NaN in all eval CSVs (--skip-gamma was used for all runs).
+    # Gamma analysis was implemented but omitted from quantitative comparison
+    # due to computational cost. Do not include gamma in published figures.
     panels = [
-        ("gamma_3pct_3mm",       "Gamma 3%/3mm\npass rate (%)",    "%"),
-        ("gamma_2pct_2mm",       "Gamma 2%/2mm\npass rate (%)",    "%"),
         ("boundary_MAE_ptv_Gy",  "Boundary MAE\nPTV ±20 mm (Gy)", "Gy"),
+        ("boundary_MAE_rectum_Gy","Boundary MAE\nRectum (Gy)",     "Gy"),
         ("Dice_95iso",           "Isodose Dice\n95% level",        ""),
         ("Dice_80iso",           "Isodose Dice\n80% level",        ""),
-        ("HD95_95iso_mm",        "Isodose HD95\n95% level (mm)",   "mm"),
+        ("Dice_50iso",           "Isodose Dice\n50% level",        ""),
+        ("HD95_100iso_mm",       "Isodose HD95\n100% level (mm)",  "mm"),
     ]
 
     fig, axes = plt.subplots(2, 3, figsize=(14, 8))
