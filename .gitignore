@@ -42,11 +42,14 @@ outputs/logs/
 # Collaborator reference files — private HPC paths, not part of this thesis
 nika/
 
-# Personal context files — ignore everything in docs/ except the tracker
+# Personal context files — ignore everything in docs/ except tracked files
 docs/*
+!docs/archive/
+docs/archive/*
 !docs/thesis_reporting_tracker.md
 !docs/literature_comparison.md
-!docs/results_validation.md
+!docs/final_validation_results.md
+!docs/archive/results_validation_stale_2026-06-03.md
 thesis_template
 CLAUDE.md
 .claude/
