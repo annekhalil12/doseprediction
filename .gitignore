@@ -49,6 +49,7 @@ docs/archive/*
 !docs/thesis_reporting_tracker.md
 !docs/literature_comparison.md
 !docs/final_validation_results.md
+!docs/checkpoint_registry.md
 !docs/archive/results_validation_stale_2026-06-03.md
 thesis_template
 CLAUDE.md

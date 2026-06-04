@@ -143,12 +143,16 @@ def write_end(
     except Exception:
         duration_h = None
 
+    ckpt_path = Path(doc.get("checkpoint_path", ""))
+    ckpt_sha  = _sha256(ckpt_path) if ckpt_path.exists() else "missing"
+
     doc.update({
         "status":              status,
         "wandb_run_id":        wandb_run_id,
         "best_val_loss":       round(best_val_loss, 6) if best_val_loss is not None else None,
         "best_val_dvh_score":  round(best_dvh_score, 6) if best_dvh_score is not None else None,
         "epochs_trained":      epochs_trained,
+        "checkpoint_sha256":   ckpt_sha,
         "training_end_utc":    end_utc.isoformat(),
         "training_duration_h": round(duration_h, 3) if duration_h is not None else None,
     })
