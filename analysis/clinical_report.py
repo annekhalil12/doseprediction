@@ -26,6 +26,7 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
+from scipy import stats as scipy_stats
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
@@ -96,6 +97,8 @@ SPATIAL_BOUNDARY = [
     ("Dice_80iso",              "Dice 80% iso",        "",    False),
     ("Dice_50iso",              "Dice 50% iso",        "",    False),
     ("HD95_100iso_mm",          "HD95 100% iso",       "mm",  False),
+    ("leakage_mean_pred_Gy",    "Outside-body leak",   "Gy",  False),
+    ("leakage_vol_frac",        "Leakage vol frac",    "",    False),
 ]
 
 SECTIONS = [
@@ -115,14 +118,24 @@ def load_condition(run_name: str):
 
 
 def fold_mean_std(df: pd.DataFrame, col: str, take_abs: bool):
-    """Per-fold mean, then report mean ± std of those fold means."""
+    """Per-fold mean, then return (mean, std, ci95_hw) of those fold means.
+
+    ci95_hw is the half-width of the 95% confidence interval of the mean,
+    computed using the t-distribution: t(0.975, df=n_folds-1) * std / sqrt(n_folds).
+    For 5 folds, t(0.975, 4) ≈ 2.776.
+    """
     if col not in df.columns:
-        return float("nan"), float("nan")
+        return float("nan"), float("nan"), float("nan")
     vals = df[col].abs() if take_abs else df[col]
     fold_means = vals.groupby(df["fold"]).mean().dropna()
-    if len(fold_means) == 0:
-        return float("nan"), float("nan")
-    return fold_means.mean(), fold_means.std(ddof=1)
+    n = len(fold_means)
+    if n == 0:
+        return float("nan"), float("nan"), float("nan")
+    mean = fold_means.mean()
+    std  = fold_means.std(ddof=1)
+    t_crit = scipy_stats.t.ppf(0.975, df=n - 1) if n > 1 else float("nan")
+    ci_hw  = t_crit * std / np.sqrt(n) if n > 1 else float("nan")
+    return mean, std, ci_hw
 
 
 def build_section_table(metrics, data):
@@ -131,31 +144,35 @@ def build_section_table(metrics, data):
         row = {"metric": label, "unit": unit}
         for cond_name, df in data.items():
             if df is None:
-                row[f"{cond_name}_mean"] = float("nan")
-                row[f"{cond_name}_std"]  = float("nan")
+                row[f"{cond_name}_mean"]    = float("nan")
+                row[f"{cond_name}_std"]     = float("nan")
+                row[f"{cond_name}_ci95_hw"] = float("nan")
             else:
-                m, s = fold_mean_std(df, col, take_abs)
-                row[f"{cond_name}_mean"] = m
-                row[f"{cond_name}_std"]  = s
+                m, s, ci = fold_mean_std(df, col, take_abs)
+                row[f"{cond_name}_mean"]    = m
+                row[f"{cond_name}_std"]     = s
+                row[f"{cond_name}_ci95_hw"] = ci
         rows.append(row)
     return pd.DataFrame(rows)
 
 
 def print_section(title: str, table: pd.DataFrame, cond_names: list) -> None:
-    print(f"\n{'─'*70}")
+    print(f"\n{'─'*80}")
     print(f"  {title}")
-    print(f"{'─'*70}")
-    header = f"{'Metric':<28s}" + "".join(f"  {c:<20s}" for c in cond_names)
+    print(f"{'─'*80}")
+    print(f"  Format: mean ± fold_std  (95% CI ± hw)")
+    header = f"{'Metric':<28s}" + "".join(f"  {c:<30s}" for c in cond_names)
     print(header)
     for _, r in table.iterrows():
         unit = f" {r['unit']}" if r['unit'] else ""
         line = f"  {r['metric']:<26s}"
         for c in cond_names:
-            m, s = r[f"{c}_mean"], r[f"{c}_std"]
+            m, s, ci = r[f"{c}_mean"], r[f"{c}_std"], r[f"{c}_ci95_hw"]
             if np.isnan(m):
-                line += f"  {'—':<20s}"
+                line += f"  {'—':<30s}"
             else:
-                line += f"  {m:.3f} ± {s:.3f}{unit:<5s}    "
+                ci_str = f"±{ci:.3f}" if not np.isnan(ci) else "n/a"
+                line += f"  {m:.3f} ± {s:.3f}{unit} (95%CI {ci_str})  "
         print(line)
 
 

@@ -167,9 +167,38 @@ def bootstrap_ci(deltas: np.ndarray, n_boot: int = N_BOOT, alpha: float = ALPHA)
     return lo, hi
 
 
+def _bh_fdr(pvalues: np.ndarray) -> np.ndarray:
+    """Benjamini-Hochberg FDR-adjusted p-values (preserves NaN positions)."""
+    arr = np.array(pvalues, dtype=float)
+    valid_mask = ~np.isnan(arr)
+    if not valid_mask.any():
+        return arr
+    valid_p = arr[valid_mask]
+    n = len(valid_p)
+    sort_idx  = np.argsort(valid_p)
+    sorted_p  = valid_p[sort_idx]
+    adj       = sorted_p * n / np.arange(1, n + 1)
+    for i in range(n - 2, -1, -1):
+        adj[i] = min(adj[i], adj[i + 1])
+    adj = np.minimum(adj, 1.0)
+    adj_unsorted = np.empty(n)
+    adj_unsorted[sort_idx] = adj
+    result = np.full(len(arr), np.nan)
+    result[valid_mask] = adj_unsorted
+    return result
+
+
 def paired_stats(a: np.ndarray, b: np.ndarray, metric: str,
                  lower_is_better: bool = True) -> dict:
-    """Compute full paired comparison statistics for one metric."""
+    """Compute full paired comparison statistics for one metric.
+
+    Effect size: Cohen's dz = mean(delta) / sd(delta) — the paired equivalent
+    of Cohen's d. Benchmarks: small=0.2, medium=0.5, large=0.8.
+
+    Normality: Shapiro-Wilk on the deltas. If shapiro_p < 0.05 the distribution
+    of differences is non-normal and the Wilcoxon p-value should be preferred
+    over the t-test p-value when reporting.
+    """
     deltas = a - b
     n      = len(deltas)
 
@@ -185,6 +214,15 @@ def paired_stats(a: np.ndarray, b: np.ndarray, metric: str,
     else:
         w_p = float("nan")
 
+    # Cohen's dz for paired data
+    cohens_dz = float(mean_d / std_d) if std_d > 1e-12 else 0.0
+
+    # Shapiro-Wilk on deltas (requires 3 ≤ n ≤ 5000)
+    if 3 <= n <= 5000:
+        _, shapiro_p = stats.shapiro(deltas)
+    else:
+        shapiro_p = float("nan")
+
     # A wins when A is better: lower for error metrics, higher for Dice.
     a_wins = (a < b).mean() if lower_is_better else (a > b).mean()
 
@@ -196,9 +234,14 @@ def paired_stats(a: np.ndarray, b: np.ndarray, metric: str,
         "std_diff":         round(std_d, 4),
         "ci_lo_95":         round(ci_lo, 4),
         "ci_hi_95":         round(ci_hi, 4),
+        "cohens_dz":        round(cohens_dz, 3),
+        "shapiro_p":        round(shapiro_p, 4) if not np.isnan(shapiro_p) else "n/a",
         "t_stat":           round(t_stat, 3),
         "t_pvalue":         round(t_p, 4),
         "wilcoxon_p":       round(w_p, 4) if not np.isnan(w_p) else "n/a",
+        # FDR-adjusted p-values are filled in after all rows are collected.
+        "t_pvalue_fdr":     float("nan"),
+        "wilcoxon_p_fdr":   float("nan"),
         "pct_A_wins":       round(a_wins * 100, 1),
     }
 
@@ -270,7 +313,9 @@ def run_comparison(
         print(
             f"    {display:<38s}  Δ={s['mean_diff']:+.4f} ± {s['std_diff']:.4f}{unit_str}"
             f"  95%CI=[{s['ci_lo_95']:+.4f}, {s['ci_hi_95']:+.4f}]"
+            f"  dz={s['cohens_dz']:+.3f}"
             f"  t_p={s['t_pvalue']:.4f}{sig_t}"
+            f"  SW_p={s['shapiro_p']}"
             f"  A_wins={s['pct_A_wins']}%"
         )
     return rows
@@ -319,7 +364,7 @@ def plot_paired_differences(all_rows: list, metrics: list) -> None:
     axes[0].set_yticks(range(n_comp))
     axes[0].set_yticklabels([descs[c] for c in comparisons], fontsize=8)
     fig.suptitle("Paired comparisons — mean difference ± 95% bootstrap CI\n"
-                 "(* p<0.05, ** p<0.01 paired t-test)",
+                 "(* p_FDR<0.05, ** p_FDR<0.01; BH-corrected paired t-test)",
                  fontsize=10)
     plt.tight_layout()
     out = OUT_DIR / "paired_comparison_plot.png"
@@ -357,11 +402,30 @@ def main():
         print("No comparisons could be run — check eval CSVs.")
         sys.exit(1)
 
+    # ── Benjamini-Hochberg FDR correction (per comparison) ────────────────
+    # Applied separately for t-test and Wilcoxon p-values across all metrics
+    # within each comparison group.
+    df_all = pd.DataFrame(all_rows)
+    for cmp_label in df_all["comparison"].unique():
+        mask = df_all["comparison"] == cmp_label
+
+        t_raw = pd.to_numeric(df_all.loc[mask, "t_pvalue"], errors="coerce").values
+        w_raw = pd.to_numeric(df_all.loc[mask, "wilcoxon_p"], errors="coerce").values
+
+        df_all.loc[mask, "t_pvalue_fdr"]   = np.round(_bh_fdr(t_raw), 4)
+        df_all.loc[mask, "wilcoxon_p_fdr"] = np.round(_bh_fdr(w_raw), 4)
+
+    print("\n── FDR correction (Benjamini-Hochberg, per comparison) applied ──")
+    all_rows = df_all.to_dict("records")
+
     out_csv = OUT_DIR / "paired_comparison.csv"
     cols = ["comparison", "description", "metric", "lower_is_better", "n_patients",
             "mean_diff", "std_diff", "ci_lo_95", "ci_hi_95",
-            "t_stat", "t_pvalue", "wilcoxon_p", "pct_A_wins"]
-    pd.DataFrame(all_rows)[cols].to_csv(out_csv, index=False)
+            "cohens_dz", "shapiro_p",
+            "t_stat", "t_pvalue", "t_pvalue_fdr",
+            "wilcoxon_p", "wilcoxon_p_fdr",
+            "pct_A_wins"]
+    df_all[cols].to_csv(out_csv, index=False)
     print(f"\n  Table saved: {out_csv}")
 
     plot_paired_differences(all_rows, metrics[:5])  # plot first 5 metrics
