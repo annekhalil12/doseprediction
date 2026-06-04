@@ -25,8 +25,9 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from matplotlib.lines import Line2D
 
-EVAL_DIR = Path("outputs/evaluation")
-OUT_DIR  = Path("outputs/analysis")  # overridden by --out-dir
+EVAL_DIR      = Path("outputs/evaluation")
+EVAL_ARCHIVED = Path("outputs/evaluation/archived_ablations")
+OUT_DIR       = Path("outputs/analysis")  # overridden by --out-dir
 
 MODELS: dict[str, str] = {
     "U-Net Sigmoid":   "unet3d_ch32_sigmoid_snellius",
@@ -58,15 +59,15 @@ plt.rcParams.update({
 # ---------------------------------------------------------------------------
 
 def load_model(run_name: str) -> pd.DataFrame | None:
-    dfs = []
-    for fold in range(5):
-        p = EVAL_DIR / f"{run_name}_fold{fold}_val.csv"
-        if p.exists():
-            dfs.append(pd.read_csv(p))
-    if not dfs:
-        print(f"  WARNING: no eval CSVs found for {run_name} — skipping")
-        return None
-    return pd.concat(dfs, ignore_index=True)
+    # Check top-level eval dir first, then archived ablations (for tanh runs).
+    for base in [EVAL_DIR, EVAL_ARCHIVED]:
+        dfs = [pd.read_csv(base / f"{run_name}_fold{fold}_val.csv")
+               for fold in range(5)
+               if (base / f"{run_name}_fold{fold}_val.csv").exists()]
+        if dfs:
+            return pd.concat(dfs, ignore_index=True)
+    print(f"  WARNING: no eval CSVs found for {run_name} — skipping")
+    return None
 
 
 def fold_means(df: pd.DataFrame, col: str) -> list[float]:
