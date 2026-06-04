@@ -22,12 +22,22 @@ data/zotero_papers.json
 # Curated results (figures + summary) are committed under results/
 # Everything under outputs/ stays gitignored
 
-# Training outputs — ignore everything; nothing here is committed
+# Training outputs — checkpoints, logs and visualisations are too large / ephemeral
 outputs/checkpoints_*/
 outputs/visualisations/
 outputs/logs/
-outputs/evaluation/
-outputs/analysis/
+
+# Evaluation — ignore stale/archived runs; track current valid CSVs
+outputs/evaluation/baseline_sigmoid/
+outputs/evaluation/archived_ablations/
+
+# Analysis — ignore archived partial runs; track current figures and CSVs
+outputs/analysis/archive/
+
+# Ignore large checkpoint, log, and visualisation dirs entirely
+outputs/checkpoints_*/
+outputs/visualisations/
+outputs/logs/
 
 # Collaborator reference files — private HPC paths, not part of this thesis
 nika/
@@ -38,14 +48,12 @@ docs/*
 !docs/literature_comparison.md
 !docs/results_validation.md
 thesis_template
-CLAUDE.md
 .claude/
 *.zip
 
 # W&B
 wandb/
 
-# SLURM — logs and job scripts are cluster-specific, not part of the codebase
+# SLURM — ignore logs; track job scripts as part of the pipeline
 *.out
 *.err
-*.sbatch
