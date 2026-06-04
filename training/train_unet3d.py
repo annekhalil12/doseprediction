@@ -180,6 +180,8 @@ def main():
                             help="Disable spatial flip augmentation (default for all conditions).")
     parser.add_argument("--overwrite", action="store_true",
                         help="Overwrite an existing best checkpoint instead of refusing to start.")
+    parser.add_argument("--run-name", dest="run_name", type=str, default=None,
+                        help="Override cfg.RUN_NAME. Applied last, after all other flag rewrites.")
     args, _ = parser.parse_known_args()
     if args.fold is not None:
         cfg.FOLD = args.fold
@@ -196,6 +198,8 @@ def main():
             cfg.RUN_NAME = cfg.RUN_NAME.replace("_snellius", "_geom_snellius")
         elif not args.geom and "_geom_" in cfg.RUN_NAME:
             cfg.RUN_NAME = cfg.RUN_NAME.replace("_geom_", "_")
+    if args.run_name is not None:
+        cfg.RUN_NAME = args.run_name
 
     cfg.CKPT_DIR.mkdir(parents=True, exist_ok=True)
     ckpt_path = cfg.CKPT_DIR / f"{cfg.RUN_NAME}_fold{cfg.FOLD}_best.pt"

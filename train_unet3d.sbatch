@@ -26,4 +26,7 @@ elif [ "${GEOM:-}" = "0" ]; then GEOM_ARG="--no-geom"
 else GEOM_ARG=""
 fi
 
-python3 training/train_unet3d.py --fold $FOLD $OVERWRITE_ARG $GEOM_ARG
+RUN_NAME_ARG=""
+if [ -n "${RUN_NAME:-}" ]; then RUN_NAME_ARG="--run-name $RUN_NAME"; fi
+
+python3 training/train_unet3d.py --fold $FOLD $OVERWRITE_ARG $GEOM_ARG $RUN_NAME_ARG
