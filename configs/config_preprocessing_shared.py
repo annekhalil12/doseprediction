@@ -89,3 +89,7 @@ CHANNEL_MAP = {
     12: "dir_y_shifted",
     13: "dir_x_shifted",
 }
+
+# Channels written by preprocessing.py into each pickle (0–8 only).
+# Geometric channels 9–13 are appended separately by add_geom_channels.py.
+AVAILABLE_CHANNELS = {k: v for k, v in CHANNEL_MAP.items() if k <= 8}
