@@ -1,0 +1,7 @@
+comparison,description,metric,n_patients,mean_diff,std_diff,ci_lo_95,ci_hi_95,t_stat,t_pvalue,wilcoxon_p,pct_A_wins
+unet_geom_effect,U-Net geom − U-Net baseline,body_MAE_Gy,367,-0.0062,0.1114,-0.0175,0.0053,-1.063,0.2886,0.1183,54.0
+unet_geom_effect,U-Net geom − U-Net baseline,ptv_MAE_Gy,367,-0.3096,0.3869,-0.348,-0.2696,-15.329,0.0,0.0,79.6
+unet_geom_effect,U-Net geom − U-Net baseline,bladder_MAE_Gy,367,-0.0742,0.2753,-0.1031,-0.0456,-5.163,0.0,0.0,60.8
+model_geom,DoseGAN geom − U-Net geom,body_MAE_Gy,367,0.0287,0.1115,0.0172,0.0398,4.932,0.0,0.0,34.6
+model_geom,DoseGAN geom − U-Net geom,ptv_MAE_Gy,367,-0.2107,0.3374,-0.2455,-0.1769,-11.96,0.0,0.0,70.6
+model_geom,DoseGAN geom − U-Net geom,bladder_MAE_Gy,367,0.0404,0.3451,0.0052,0.0761,2.244,0.0254,0.0188,45.5
