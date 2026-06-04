@@ -85,6 +85,11 @@ def select_patient() -> tuple[str, int]:
         return args.patient_id, FOLD
 
     csv_path = CONDITIONS[0][5]  # DG baseline eval CSV
+    if not csv_path.exists():
+        raise FileNotFoundError(
+            f"DoseGAN baseline eval CSV not found: {csv_path}\n"
+            "Run: sbatch --export=ALL,MODEL=dosegan,FOLD=0,RUN_NAME=dosegan_ngf32_sigmoid_snellius,GEOM=0 eval.sbatch"
+        )
     rows = sorted(list(csv.DictReader(open(csv_path))),
                   key=lambda r: float(r["body_MAE_Gy"]))
     n = len(rows)
