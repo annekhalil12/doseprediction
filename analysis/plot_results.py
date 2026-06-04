@@ -239,7 +239,7 @@ def fig_new_metrics(data: dict) -> None:
     )
     if not has_new:
         print("  New metric columns not yet in eval CSVs — skipping fig_new_metrics.")
-        print("  Run eval_baseline_sigmoid.sbatch first, then re-run this script.")
+        print("  Run eval.sbatch (with GEOM=0) first, then re-run this script.")
         return
 
     panels = [

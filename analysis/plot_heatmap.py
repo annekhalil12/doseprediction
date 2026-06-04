@@ -24,7 +24,7 @@ from matplotlib.collections import PatchCollection
 
 # ── paths ────────────────────────────────────────────────────────────────────
 
-BASE = Path("outputs/evaluation/baseline_sigmoid")
+BASE = Path("outputs/evaluation")
 GEOM = Path("outputs/evaluation")
 OUT  = Path("outputs/analysis")
 OUT.mkdir(parents=True, exist_ok=True)

@@ -43,7 +43,7 @@ FOLD = args.fold
 
 BASE_CKPT = Path("outputs/checkpoints_dosegan")
 UNET_CKPT = Path("outputs/checkpoints_unet3d")
-EVAL_BASE  = Path("outputs/evaluation/baseline_sigmoid")
+EVAL_BASE  = Path("outputs/evaluation")
 EVAL_GEOM  = Path("outputs/evaluation")
 PICKLE_DIR = Path("data/pickles")
 OUT_DIR    = Path("outputs/analysis")

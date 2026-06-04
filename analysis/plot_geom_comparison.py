@@ -3,7 +3,6 @@
 # Compares baseline (9-ch) vs geom (14-ch) for both U-Net and DoseGAN.
 #
 # Reads:  outputs/evaluation/{run_name}_fold{0..4}_val.csv
-#         Falls back to outputs/evaluation/baseline_sigmoid/ for baseline CSVs.
 # Writes: outputs/analysis/srq2_geom_comparison/
 #   fig_geom_overall.png     — MAE_body and RMSE_body: baseline vs geom per model
 #   fig_geom_boundary.png    — boundary MAE (PTV/Rectum/Bladder): baseline vs geom
@@ -19,9 +18,8 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
 
-EVAL_DIR      = Path("outputs/evaluation")
-EVAL_BASELINE = Path("outputs/evaluation/baseline_sigmoid")
-OUT_DIR       = Path("outputs/analysis/srq2_geom_comparison")
+EVAL_DIR = Path("outputs/evaluation")
+OUT_DIR  = Path("outputs/analysis/srq2_geom_comparison")
 DOSE_SCALE    = 50.0
 
 CONDITIONS = {
@@ -41,22 +39,19 @@ COLORS = {
 
 def load_run(run_name: str) -> pd.DataFrame | None:
     """Load and concatenate fold CSVs for one run. Returns None if missing."""
-    # Try root eval dir first, then baseline subdir
-    for base in [EVAL_DIR, EVAL_BASELINE]:
-        paths = sorted(base.glob(f"{run_name}_fold*_val.csv"))
-        if paths:
-            return pd.concat([pd.read_csv(p) for p in paths], ignore_index=True)
+    paths = sorted(EVAL_DIR.glob(f"{run_name}_fold*_val.csv"))
+    if paths:
+        return pd.concat([pd.read_csv(p) for p in paths], ignore_index=True)
     return None
 
 
 def fold_stats(run_name: str, col: str):
     """Return (mean, std) across fold-level means, or (nan, nan) if missing."""
-    for base in [EVAL_DIR, EVAL_BASELINE]:
-        paths = sorted(base.glob(f"{run_name}_fold*_val.csv"))
-        if paths:
-            fold_means = [pd.read_csv(p)[col].mean() for p in paths if col in pd.read_csv(p).columns]
-            if fold_means:
-                return float(np.mean(fold_means)), float(np.std(fold_means))
+    paths = sorted(EVAL_DIR.glob(f"{run_name}_fold*_val.csv"))
+    if paths:
+        fold_means = [pd.read_csv(p)[col].mean() for p in paths if col in pd.read_csv(p).columns]
+        if fold_means:
+            return float(np.mean(fold_means)), float(np.std(fold_means))
     return float("nan"), float("nan")
 
 

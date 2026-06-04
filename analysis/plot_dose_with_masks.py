@@ -97,7 +97,7 @@ def select_patients() -> list[tuple[str, str]]:
     if not csv_path.exists():
         raise FileNotFoundError(
             f"Eval CSV not found: {csv_path}\n"
-            "Run eval_baseline_sigmoid.sbatch first to generate it."
+            "Run eval.sbatch (with GEOM=0) first to generate it."
         )
     df = pd.read_csv(csv_path).sort_values("body_MAE_Gy").reset_index(drop=True)
     n = len(df)
