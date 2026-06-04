@@ -1,10 +1,15 @@
 # Validation Results — 2-Model × 2-Condition Comparison
 
-**Date:** 2026-06-03
+**Date:** 2026-06-03 (DG base column stale — see warning below)
 **Models:** DoseGAN (GAN + L1 loss) and U-Net (L1 loss only)
 **Conditions:** baseline (9-channel: 8 structure masks + sCT) vs geom (14-channel: + 5 geometric channels)
 **Split:** 5-fold cross-validation on the train/val set (n ≈ 367 patients per condition)
 **Note:** gamma pass rate omitted (--skip-gamma; expensive 3D computation deferred to final evaluation)
+
+> **⚠ DG base column is stale.** The DoseGAN baseline checkpoints were retrained on 2026-06-04
+> with InstanceNorm(affine=True) to match the U-Net normalisation. The numbers in the DG base
+> column below come from the old BatchNorm checkpoints and will change once the new eval finishes.
+> All other columns (UN base, DG geom, UN geom) are current.
 
 ---
 
