@@ -138,12 +138,11 @@ def train_one_epoch(
             structure_dmean_loss(fake_dose, real_dose, bladder_mask) +
             structure_dmean_loss(fake_dose, real_dose, rectum_mask)
         )
-        loss_G_grad  = gradient_magnitude_loss(fake_dose, real_dose)
-
         loss_G = (loss_G_adv
                   + lambda_voxel * loss_G_voxel
-                  + lambda_dvh   * loss_G_dvh
-                  + lambda_grad  * loss_G_grad)
+                  + lambda_dvh   * loss_G_dvh)
+        if lambda_grad > 0.0:
+            loss_G = loss_G + lambda_grad * gradient_magnitude_loss(fake_dose, real_dose)
 
         optimizer_G.zero_grad()
         loss_G.backward()

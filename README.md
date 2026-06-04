@@ -59,11 +59,11 @@ All 4 conditions use InstanceNorm(affine=True), Sigmoid output, LSGAN, 200 epoch
 | DoseGAN geom | Complete — folds 0–4 | `dosegan_ngf32_sigmoid_geom_snellius` |
 
 ### Ablations — complete (all negative results)
-| Ablation | Finding |
-|---|---|
-| Sigmoid vs Tanh (2×2, fold 0–4) | Sigmoid wins every fold for both models (~4% lower MAE) |
-| Gradient-magnitude loss λ=1.0 (fold 0) | No improvement for U-Net; +4.6% worse for DoseGAN |
-| BCE vs LSGAN (DoseGAN fold 0) | BCE val_L1=0.0195 vs LSGAN 0.0174 — worse |
+| Ablation | Finding | CSVs |
+|---|---|---|
+| Sigmoid vs Tanh (2×2, fold 0–4) | Sigmoid wins every fold for both models (~4% lower MAE) | `outputs/evaluation/archived_ablations/` |
+| Gradient-magnitude loss λ=1.0 (fold 0) | No improvement for U-Net; +4.6% worse for DoseGAN | **TODO: retrain with current InstanceNorm arch and re-evaluate** — original checkpoints predate the BatchNorm→InstanceNorm migration and cannot be loaded by current code |
+| BCE vs LSGAN (DoseGAN fold 0) | BCE val_L1=0.0195 vs LSGAN 0.0174 — worse | Eval pending (job 23468825) |
 
 ## Environment
 
