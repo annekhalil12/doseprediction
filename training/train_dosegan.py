@@ -302,7 +302,7 @@ def main():
 
     generator = UnetGenerator3d(
         input_nc=cfg.INPUT_NC, output_nc=cfg.OUTPUT_NC,
-        ngf=cfg.NGF,
+        ngf=cfg.NGF, output_activation=cfg.OUTPUT_ACTIVATION,
     ).to(device)
 
     discriminator = NLayerDiscriminator(

@@ -29,12 +29,13 @@ BATCH_SIZE  = 1    # 3D volumes — batch size 1 is standard
 NUM_WORKERS = 4    # reduce to 0 if DataLoader throws errors on Windows
 
 # ── Model architecture ─────────────────────────────────────────────────────
-INPUT_NC  = 9   # 9 without geom (8 masks + sCT); 14 with geom (+ 5 geom channels)
+INPUT_NC          = 9         # 9 without geom (8 masks + sCT); 14 with geom (+ 5 geom channels)
 USE_GEOM_CHANNELS = False
-OUTPUT_NC = 1   # predicted dose volume
-NGF       = 32  # base number of generator filters — doubles at each U-Net level
-NDF       = 32  # base number of discriminator filters
-N_LAYERS  = 3   # number of discriminator layers
+OUTPUT_NC         = 1         # predicted dose volume
+OUTPUT_ACTIVATION = "sigmoid" # "sigmoid" (empirically selected) or "tanh"
+NGF               = 32        # base number of generator filters — doubles at each U-Net level
+NDF               = 32        # base number of discriminator filters
+N_LAYERS          = 3         # number of discriminator layers
 
 # ── Optimizers ─────────────────────────────────────────────────────────────
 LR_G   = 2e-4         # generator learning rate

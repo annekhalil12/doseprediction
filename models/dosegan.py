@@ -51,12 +51,20 @@ class UnetGenerator3d(nn.Module):
                  # single-sample statistics and its running mean/var overfits to the
                  # training distribution, hurting generalisation across acquisition groups.
                  # affine=True gives InstanceNorm learnable scale/shift, matching BatchNorm expressiveness.
-                 norm_layer=functools.partial(nn.InstanceNorm3d, affine=True), use_dropout=False, gpu_ids=[]):
+                 norm_layer=functools.partial(nn.InstanceNorm3d, affine=True), use_dropout=False, gpu_ids=[],
+                 output_activation: str = "sigmoid"):
         super(UnetGenerator3d, self).__init__()
         self.gpu_ids = gpu_ids
 
         # currently, support only input_nc == output_nc
         # assert (input_nc == output_nc)
+
+        if output_activation == "sigmoid":
+            out_act = nn.Sigmoid()
+        elif output_activation == "tanh":
+            out_act = nn.Tanh()
+        else:
+            raise ValueError(f"output_activation must be 'sigmoid' or 'tanh', got {output_activation!r}")
 
         self.initial_block = nn.Sequential(*[nn.Conv3d(input_nc, ngf, kernel_size=4, stride=1, padding=3, dilation=2),
                                              norm_layer(ngf),
@@ -76,7 +84,7 @@ class UnetGenerator3d(nn.Module):
                                                norm_layer=norm_layer)
         self.outer_block = nn.Sequential(
             *[nn.Conv3d(ngf * 2, output_nc, kernel_size=4, stride=1, padding=3, dilation=2),
-              nn.Sigmoid()])
+              out_act])
 
         self.model = unet_block
 
