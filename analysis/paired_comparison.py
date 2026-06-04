@@ -63,6 +63,59 @@ COMPARISONS = [
     ("model_geom",       "dgan_geom", "unet_geom",  "DoseGAN geom − U-Net geom"),
 ]
 
+# True  = lower is better (MAE, RMSE, HD95, leakage)
+# False = higher is better (Dice)
+# Metrics absent from this dict default to True.
+METRIC_LOWER_IS_BETTER: dict[str, bool] = {
+    "body_MAE_Gy":             True,
+    "body_RMSE_Gy":            True,
+    "ptv_MAE_Gy":              True,
+    "rectum_MAE_Gy":           True,
+    "bladder_MAE_Gy":          True,
+    "ptv_D95_diff":            True,
+    "ptv_Dmean_diff":          True,
+    "rectum_Dmean_diff":       True,
+    "bladder_Dmean_diff":      True,
+    "boundary_MAE_ptv_Gy":     True,
+    "boundary_MAE_rectum_Gy":  True,
+    "boundary_MAE_bladder_Gy": True,
+    "HD95_100iso_mm":          True,
+    "HD95_95iso_mm":           True,
+    "HD95_80iso_mm":           True,
+    "HD95_50iso_mm":           True,
+    "Dice_100iso":             False,
+    "Dice_95iso":              False,
+    "Dice_80iso":              False,
+    "Dice_50iso":              False,
+    "leakage_mean_pred_Gy":    True,
+    "leakage_vol_frac":        True,
+}
+
+METRIC_UNITS: dict[str, str] = {
+    "body_MAE_Gy":             "Gy",
+    "body_RMSE_Gy":            "Gy",
+    "ptv_MAE_Gy":              "Gy",
+    "rectum_MAE_Gy":           "Gy",
+    "bladder_MAE_Gy":          "Gy",
+    "ptv_D95_diff":            "Gy",
+    "ptv_Dmean_diff":          "Gy",
+    "rectum_Dmean_diff":       "Gy",
+    "bladder_Dmean_diff":      "Gy",
+    "boundary_MAE_ptv_Gy":     "Gy",
+    "boundary_MAE_rectum_Gy":  "Gy",
+    "boundary_MAE_bladder_Gy": "Gy",
+    "HD95_100iso_mm":          "mm",
+    "HD95_95iso_mm":           "mm",
+    "HD95_80iso_mm":           "mm",
+    "HD95_50iso_mm":           "mm",
+    "Dice_100iso":             "",
+    "Dice_95iso":              "",
+    "Dice_80iso":              "",
+    "Dice_50iso":              "",
+    "leakage_mean_pred_Gy":    "Gy",
+    "leakage_vol_frac":        "",
+}
+
 DEFAULT_METRICS = [
     "body_MAE_Gy",
     "body_RMSE_Gy",
@@ -73,6 +126,9 @@ DEFAULT_METRICS = [
     "ptv_Dmean_diff",
     "rectum_Dmean_diff",
     "bladder_Dmean_diff",
+    "Dice_100iso",
+    "Dice_50iso",
+    "HD95_100iso_mm",
 ]
 
 
@@ -96,9 +152,10 @@ def bootstrap_ci(deltas: np.ndarray, n_boot: int = N_BOOT, alpha: float = ALPHA)
     return lo, hi
 
 
-def paired_stats(a: np.ndarray, b: np.ndarray, metric: str) -> dict:
+def paired_stats(a: np.ndarray, b: np.ndarray, metric: str,
+                 lower_is_better: bool = True) -> dict:
     """Compute full paired comparison statistics for one metric."""
-    deltas = a - b   # positive = A worse than B
+    deltas = a - b
     n      = len(deltas)
 
     mean_d = deltas.mean()
@@ -107,26 +164,27 @@ def paired_stats(a: np.ndarray, b: np.ndarray, metric: str) -> dict:
 
     t_stat, t_p = stats.ttest_rel(a, b)
 
-    # Wilcoxon requires non-zero differences
     nonzero = deltas[deltas != 0]
     if len(nonzero) >= 10:
         _, w_p = stats.wilcoxon(a, b, alternative="two-sided")
     else:
         w_p = float("nan")
 
-    a_wins = (a < b).mean()   # fraction where A < B (lower MAE = better)
+    # A wins when A is better: lower for error metrics, higher for Dice.
+    a_wins = (a < b).mean() if lower_is_better else (a > b).mean()
 
     return {
-        "metric":       metric,
-        "n_patients":   n,
-        "mean_diff":    round(mean_d, 4),
-        "std_diff":     round(std_d, 4),
-        "ci_lo_95":     round(ci_lo, 4),
-        "ci_hi_95":     round(ci_hi, 4),
-        "t_stat":       round(t_stat, 3),
-        "t_pvalue":     round(t_p, 4),
-        "wilcoxon_p":   round(w_p, 4) if not np.isnan(w_p) else "n/a",
-        "pct_A_wins":   round(a_wins * 100, 1),
+        "metric":           metric,
+        "lower_is_better":  lower_is_better,
+        "n_patients":       n,
+        "mean_diff":        round(mean_d, 4),
+        "std_diff":         round(std_d, 4),
+        "ci_lo_95":         round(ci_lo, 4),
+        "ci_hi_95":         round(ci_hi, 4),
+        "t_stat":           round(t_stat, 3),
+        "t_pvalue":         round(t_p, 4),
+        "wilcoxon_p":       round(w_p, 4) if not np.isnan(w_p) else "n/a",
+        "pct_A_wins":       round(a_wins * 100, 1),
     }
 
 
@@ -160,16 +218,19 @@ def run_comparison(
     for m in metrics:
         if f"{m}_a" not in merged.columns:
             continue
-        a = merged[f"{m}_a"].values
-        b = merged[f"{m}_b"].values
-        s = paired_stats(a, b, m)
-        s["comparison"] = label
+        a   = merged[f"{m}_a"].values
+        b   = merged[f"{m}_b"].values
+        lib = METRIC_LOWER_IS_BETTER.get(m, True)
+        unit = METRIC_UNITS.get(m, "")
+        s   = paired_stats(a, b, m, lower_is_better=lib)
+        s["comparison"]  = label
         s["description"] = description
         rows.append(s)
 
+        unit_str = f" {unit}" if unit else ""
         sig_t = "**" if s["t_pvalue"] < 0.01 else ("*" if s["t_pvalue"] < 0.05 else "")
         print(
-            f"    {m:<30s}  Δ={s['mean_diff']:+.4f} ± {s['std_diff']:.4f} Gy"
+            f"    {m:<30s}  Δ={s['mean_diff']:+.4f} ± {s['std_diff']:.4f}{unit_str}"
             f"  95%CI=[{s['ci_lo_95']:+.4f}, {s['ci_hi_95']:+.4f}]"
             f"  t_p={s['t_pvalue']:.4f}{sig_t}"
             f"  A_wins={s['pct_A_wins']}%"
@@ -195,7 +256,12 @@ def plot_paired_differences(all_rows: list, metrics: list) -> None:
     colors = ["#1565C0", "#B71C1C", "#2E7D32", "#E65100"]
 
     for ax, metric in zip(axes, metrics):
-        sub = df[df["metric"] == metric]
+        sub  = df[df["metric"] == metric]
+        unit = METRIC_UNITS.get(metric, "")
+        lib  = METRIC_LOWER_IS_BETTER.get(metric, True)
+        direction_note = "negative = A better" if lib else "positive = A better"
+        xlabel = f"Mean diff (A−B{', ' + unit if unit else ''})"
+
         for i, cmp in enumerate(comparisons):
             row = sub[sub["comparison"] == cmp]
             if row.empty:
@@ -209,13 +275,13 @@ def plot_paired_differences(all_rows: list, metrics: list) -> None:
             )
         ax.axvline(0, color="black", lw=0.8, ls="--")
         ax.set_title(metric.replace("_", "\n"), fontsize=9)
-        ax.set_xlabel("Mean diff (A−B, Gy)", fontsize=8)
+        ax.set_xlabel(f"{xlabel}\n({direction_note})", fontsize=8)
         ax.tick_params(labelsize=8)
 
     axes[0].set_yticks(range(n_comp))
     axes[0].set_yticklabels([descs[c] for c in comparisons], fontsize=8)
     fig.suptitle("Paired comparisons — mean difference ± 95% bootstrap CI\n"
-                 "(negative = A better; * p<0.05, ** p<0.01 paired t-test)",
+                 "(* p<0.05, ** p<0.01 paired t-test)",
                  fontsize=10)
     plt.tight_layout()
     out = OUT_DIR / "paired_comparison_plot.png"
@@ -254,7 +320,7 @@ def main():
         sys.exit(1)
 
     out_csv = OUT_DIR / "paired_comparison.csv"
-    cols = ["comparison", "description", "metric", "n_patients",
+    cols = ["comparison", "description", "metric", "lower_is_better", "n_patients",
             "mean_diff", "std_diff", "ci_lo_95", "ci_hi_95",
             "t_stat", "t_pvalue", "wilcoxon_p", "pct_A_wins"]
     pd.DataFrame(all_rows)[cols].to_csv(out_csv, index=False)
