@@ -48,14 +48,14 @@ Last updated: 2026-06-03
 | M1 | Dataset: LUND-PROBE, 432 patients, 9-channel input (8 structure masks + sCT), dose target | READY | `preprocessing/preprocessing.py` |
 | M2 | Preprocessing: resample to 1.5 mm isotropic, z-score sCT inside body contour, dose / 50 Gy, PTV-centric crop 128×256×320 | READY | `preprocessing/preprocessing.py`, `configs/config_preprocessing_shared.py` |
 | M3 | Split: 15% test held out, 5-fold CV on remainder, stratified by acquisition group (oldAcq/newAcq) | READY | `data/split.csv`, `preprocessing/create_split.py` |
-| M4 | U-Net architecture: 3D U-Net, 32 base channels, BatchNorm3d, Sigmoid output activation | READY | `models/unet3d.py` |
+| M4 | U-Net architecture: 3D U-Net, 32 base channels, InstanceNorm3d(affine=True), Sigmoid output activation | READY | `models/unet3d.py` |
 | M5 | DoseGAN architecture: 3D U-Net generator with attention gates at every skip connection, PatchGAN discriminator, LSGAN loss | READY | `models/dosegan.py` |
 | M6 | Footnote: output activation set to Sigmoid based on 2×2 ablation; deviates from Kearney et al. 2020 which uses Tanh | READY | Section 5 below |
 | M7 | Footnote: PatchGAN discriminator ends with BatchNorm3d(1) → LeakyReLU (non-standard, inherited from Kearney et al.) | READY | `models/dosegan.py` |
 | M8 | Footnote: AttGate ties weights between down_inp and sample_inp (inherited from upstream) | READY | `models/dosegan.py` |
-| M9 | Footnote: BatchNorm3d with batch_size=1 (memory constraint standard in 3D medical imaging) | READY | `training/train_*.py` |
-| M10 | Training: Adam optimiser, LR 2e-4, 100 epochs + early stopping (patience 15), augmentation (LR flip, depth flip, sCT intensity scale/shift) | READY | `configs/config_dosegan.py`, `training/dataset.py` |
-| M11 | Metrics: body_MAE_Gy, body_RMSE_Gy computed over body-contour voxels (channel 7); same mask used during training for val_L1 | READY | `training/metrics.py`, `training/evaluate_*.py` |
+| M9 | Footnote: both models use InstanceNorm3d(affine=True) — stable at batch_size=1; original BatchNorm3d collapses to single-sample stats at batch_size=1 and was replaced 2026-06-01 | READY | `models/unet3d.py`, `models/dosegan.py` |
+| M10 | Training: Adam optimiser, LR 2e-4, 200 epochs + early stopping (patience 30), augmentation (LR flip, depth flip, sCT intensity scale/shift) | READY | `configs/config_dosegan.py`, `training/dataset.py` |
+| M11 | Metrics: body_MAE_Gy, body_RMSE_Gy computed over body-contour voxels (channel 7); same mask used during training for val_L1 | READY | `training/metrics.py`, `training/evaluate.py` |
 | M12 | Note: val_L1 redefined 2026-05-13 — pre-change values not comparable (conversion: new ≈ old / 0.32) | READY | commit a2c5cc7 |
 | M13 | Hardware and runtime: Snellius HPC, NVIDIA H100, wallclock per fold | READY | `outputs/logs/` |
 | M14 | Full clinical evaluation suite: boundary MAE (±20 mm PTV/OAR surface), gamma pass rate (3%/3mm + 2%/2mm), isodose Dice + HD95 (100/95/80/50%), D01cc, V_prescription for OARs | IMPLEMENTED | `training/metrics.py` |
@@ -63,7 +63,7 @@ Last updated: 2026-06-03
 | M19 | Gradient-magnitude loss: MAE on per-axis finite differences (dx, dy, dz), averaged across 3 directions, LAMBDA_GRAD=1.0 | IMPLEMENTED — fold 0 running | `training/train_dosegan.py`, `training/train_unet3d.py` |
 | M16 | DVH regularisation loss: `structure_dmean_loss(PTV) + structure_dmean_loss(Bladder) + structure_dmean_loss(Rectum)`, weighted λ_dvh (5.0 DoseGAN, 0.1 U-Net) — added to generator loss; from Kearney et al. 2020 | IMPLEMENTED — applies to next re-train | `training/train_dosegan.py`, `training/train_unet3d.py` |
 | M17 | DVH early stopping: model saved when `val_dvh_score = mean|Δ PTV D95| + mean|Δ Bladder Dmean| + mean|Δ Rectum Dmean|` (Gy) improves, not when body-masked L1 improves | IMPLEMENTED — applies to next re-train | `training/train_dosegan.py`, `training/train_unet3d.py` |
-| M18 | Penile Bulb evaluation: Dmean, Dmax, D95, D98, V20, V40 added to per-patient eval CSV; extracted from input channel 6; NaN for ~48 absent patients | IMPLEMENTED — applies on next evaluation run | `training/evaluate_dosegan.py`, `training/evaluate_unet3d.py` |
+| M18 | Penile Bulb evaluation: Dmean, Dmax, D95, D98, V20, V40 added to per-patient eval CSV; extracted from input channel 6; NaN for ~48 absent patients | IMPLEMENTED | `training/evaluate.py` |
 | M20 | Boundary-weighted L1 loss: per-voxel weight map where ±20 mm PTV surface shell voxels get weight W, all other body voxels weight 1. Loss = body-masked weighted L1. Motivated by grad-magnitude failure (M19): targets the gradient where it matters clinically rather than all gradients uniformly. | PENDING — see Ablation A1 | `training/train_*.py` |
 | M21 | Signed distance map input: extra channel encoding signed Euclidean distance from PTV surface (negative inside, positive outside), clipped to ±50 mm and normalised to [−1, 1]. Computed on-the-fly from PTV mask (channel 0). Gives the model an explicit, continuous representation of where the dose boundary is. Distinct from the geom dist_ptv channel which is unsigned. | PENDING — see Ablation A2 | `training/dataset.py`, `training/train_*.py` |
 | M22 | Multi-scale discriminator (DoseGAN only): second NLayerDiscriminator applied to 2× spatially downsampled input (AvgPool3d kernel=2). Total D loss = 0.5*(L_D_fine + L_D_coarse); generator adversarial loss from both. Adds pressure on boundary realism at the scale of dose gradients (~5–15 mm), complementing the existing patch-level discriminator. | PENDING — see Ablation A3 | `models/dosegan.py`, `training/train_dosegan.py` |
@@ -208,7 +208,7 @@ All values are mean |Δ| (mean absolute error) as % of prescription dose (50 Gy)
 | # | Item | Status | Source |
 |---|------|--------|--------|
 | R21 | DVH curves per OAR and PTV | OPTIONAL | Not implemented — low priority |
-| R22 | Gamma pass rate (3%/3 mm, 2%/2 mm) + isodose Dice/HD95 + boundary MAE | IMPLEMENTED — needs eval run on checkpoints | `training/metrics.py`, `training/evaluate_*.py` |
+| R22 | Gamma pass rate (3%/3 mm, 2%/2 mm) + isodose Dice/HD95 + boundary MAE | IMPLEMENTED — needs eval run on checkpoints | `training/metrics.py`, `training/evaluate.py` |
 
 ---
 
@@ -221,7 +221,7 @@ All values are mean |Δ| (mean absolute error) as % of prescription dose (50 Gy)
 | D3 | Acquisition group shift: oldAcq patients drive the error tail; implications for transfer to pancreatic cohort (Phase 2) | READY | R10–R14 |
 | D4 | Failure modes (DoseGAN Sigmoid): bladder under-prediction is the dominant systematic failure; dose blurring (gradient smoothing) is the dominant spatial pattern; lateral asymmetry is a secondary failure in atypical anatomy cases | READY | R17–R18 |
 | D5 | Dose-smearing index: if R19 is run, provides a quantitative characterisation of the dominant failure mode | OPTIONAL | R19–R20 |
-| D6 | Limitations: val-set-only metrics until test-set eval, single dataset (prostate only), batch_size=1 with BatchNorm3d, no DoseGNN comparison (collaboration ended), geometric channels not implemented | READY | — |
+| D6 | Limitations: val-set-only metrics until test-set eval, single dataset (prostate only), batch_size=1, no DoseGNN comparison (collaboration ended) | READY | — |
 | D11 | Scope reduction: DoseGNN dropped because collaborator stopped development; geometric channels showed no benefit in collaborator's experiments. Honest reflection required. | READY to write | — |
 | D7 | Reflection: dose-smearing addressed at loss level — boundary-weighted L1 (A1, M20) is the concrete implemented attempt; gradient-magnitude loss tried and failed (M19); multi-scale discriminator and signed distance map are future work (M21, M22) | PENDING — update after ablation results | M19, M20, M21, M22 |
 | D8 | Inherited architectural quirks: PatchGAN tail BatchNorm+LeakyReLU, AttGate weight-tying — flagged as inherited, not corrected | READY | M7–M8 |
@@ -272,7 +272,7 @@ Draft methods footnote:
 
 ## 6. Next Steps (priority order)
 
-**Current state (2026-06-03):** All 4 conditions fully evaluated on val set. Results in `docs/results_validation.md`. Ablation experiments (Section 8) are the next experimental priority.
+**Current state (2026-06-04):** DoseGAN baseline retrained with InstanceNorm (old BatchNorm checkpoints replaced); eval pending (~10h). U-Net baseline, U-Net geom, DoseGAN geom — all evaluated. Results in `docs/results_validation.md` (DG base column stale until new eval finishes). Ablation experiments (Section 8) are the next experimental priority after DG baseline eval completes.
 
 ### Experiments (in order)
 1. **Implement and run Ablation A1** (boundary-weighted loss, fold 0 both models) — lowest effort, highest thesis impact. See Section 8.
