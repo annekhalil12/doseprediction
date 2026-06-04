@@ -1,21 +1,22 @@
 """
 analysis/clinical_report.py
 ============================
-Structured results report separating three clinically distinct categories:
+Structured results report separating four clinically distinct categories:
 
-  1. Global dose accuracy     — body/structure voxel-level error
-  2. DVH clinical endpoints   — dose-volume endpoints used in treatment planning
-  3. Spatial boundary quality — boundary MAE, isodose Dice, HD95
+  1. Global dose accuracy         — body/structure voxel-level error
+  2a. DVH accuracy (|error|)      — mean absolute DVH endpoint error
+  2b. DVH bias (signed mean)      — mean signed DVH endpoint error (+ = over-prediction)
+  3. Spatial boundary quality     — boundary MAE, isodose Dice, HD95
 
 Each section reports fold mean ± fold std across 5 folds for all 4 conditions.
-DVH endpoints report mean |diff| (absolute error) rather than signed diff.
+Separating accuracy from bias lets you distinguish "how close" from "which direction".
 
 Usage:
     PYTHONPATH=. python3 -m analysis.clinical_report
 
 Output:
     outputs/analysis/clinical_report.csv     — full table (machine-readable)
-    outputs/analysis/clinical_report.png     — three-panel summary figure
+    outputs/analysis/clinical_report.png     — four-panel summary figure
 """
 
 import sys
@@ -60,17 +61,30 @@ GLOBAL_ACCURACY = [
     ("bladder_MAE_Gy",    "Bladder MAE",    "Gy",  False),
 ]
 
-DVH_ENDPOINTS = [
-    ("ptv_D95_diff",          "PTV D95 |err|",      "Gy",  True),
-    ("ptv_D98_diff",          "PTV D98 |err|",      "Gy",  True),
-    ("ptv_Dmean_diff",        "PTV Dmean |err|",    "Gy",  True),
-    ("ptv_D01cc_diff",        "PTV D0.1cc |err|",   "Gy",  True),
-    ("rectum_Dmean_diff",     "Rectum Dmean |err|", "Gy",  True),
-    ("rectum_D01cc_diff",     "Rectum D0.1cc |err|","Gy",  True),
-    ("V_presc_rectum_diff",   "Rectum V_Rx |err|",  "%",   True),
-    ("bladder_Dmean_diff",    "Bladder Dmean |err|","Gy",  True),
-    ("bladder_D01cc_diff",    "Bladder D0.1cc |err|","Gy", True),
-    ("V_presc_bladder_diff",  "Bladder V_Rx |err|", "%",   True),
+DVH_ACCURACY = [
+    ("ptv_D95_diff",          "PTV D95 |err|",       "Gy",  True),
+    ("ptv_D98_diff",          "PTV D98 |err|",       "Gy",  True),
+    ("ptv_Dmean_diff",        "PTV Dmean |err|",     "Gy",  True),
+    ("ptv_D01cc_diff",        "PTV D0.1cc |err|",    "Gy",  True),
+    ("rectum_Dmean_diff",     "Rectum Dmean |err|",  "Gy",  True),
+    ("rectum_D01cc_diff",     "Rectum D0.1cc |err|", "Gy",  True),
+    ("V_presc_rectum_diff",   "Rectum V_Rx |err|",   "%",   True),
+    ("bladder_Dmean_diff",    "Bladder Dmean |err|", "Gy",  True),
+    ("bladder_D01cc_diff",    "Bladder D0.1cc |err|","Gy",  True),
+    ("V_presc_bladder_diff",  "Bladder V_Rx |err|",  "%",   True),
+]
+
+DVH_BIAS = [
+    ("ptv_D95_diff",          "PTV D95 bias",        "Gy",  False),
+    ("ptv_D98_diff",          "PTV D98 bias",        "Gy",  False),
+    ("ptv_Dmean_diff",        "PTV Dmean bias",      "Gy",  False),
+    ("ptv_D01cc_diff",        "PTV D0.1cc bias",     "Gy",  False),
+    ("rectum_Dmean_diff",     "Rectum Dmean bias",   "Gy",  False),
+    ("rectum_D01cc_diff",     "Rectum D0.1cc bias",  "Gy",  False),
+    ("V_presc_rectum_diff",   "Rectum V_Rx bias",    "%",   False),
+    ("bladder_Dmean_diff",    "Bladder Dmean bias",  "Gy",  False),
+    ("bladder_D01cc_diff",    "Bladder D0.1cc bias", "Gy",  False),
+    ("V_presc_bladder_diff",  "Bladder V_Rx bias",   "%",   False),
 ]
 
 SPATIAL_BOUNDARY = [
@@ -85,9 +99,10 @@ SPATIAL_BOUNDARY = [
 ]
 
 SECTIONS = [
-    ("global",   "1. Global dose accuracy",      GLOBAL_ACCURACY),
-    ("dvh",      "2. DVH clinical endpoints",     DVH_ENDPOINTS),
-    ("spatial",  "3. Spatial boundary quality",   SPATIAL_BOUNDARY),
+    ("global",    "1. Global dose accuracy",          GLOBAL_ACCURACY),
+    ("dvh_acc",   "2a. DVH accuracy (mean |error|)",  DVH_ACCURACY),
+    ("dvh_bias",  "2b. DVH bias (mean signed error)",  DVH_BIAS),
+    ("spatial",   "3. Spatial boundary quality",      SPATIAL_BOUNDARY),
 ]
 
 

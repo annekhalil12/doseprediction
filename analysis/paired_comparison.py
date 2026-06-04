@@ -63,6 +63,16 @@ COMPARISONS = [
     ("model_geom",       "dgan_geom", "unet_geom",  "DoseGAN geom − U-Net geom"),
 ]
 
+# Signed-difference columns in the eval CSVs (pred − true).
+# For these metrics paired_comparison reports BOTH the signed version (bias)
+# and the absolute version (accuracy) automatically.
+SIGNED_DIFF_METRICS = frozenset({
+    "ptv_D95_diff", "ptv_D98_diff", "ptv_Dmean_diff", "ptv_D01cc_diff",
+    "rectum_Dmean_diff", "rectum_D01cc_diff",
+    "bladder_Dmean_diff", "bladder_D01cc_diff",
+    "V_presc_rectum_diff", "V_presc_bladder_diff",
+})
+
 # True  = lower is better (MAE, RMSE, HD95, leakage)
 # False = higher is better (Dice)
 # Metrics absent from this dict default to True.
@@ -115,6 +125,11 @@ METRIC_UNITS: dict[str, str] = {
     "leakage_mean_pred_Gy":    "Gy",
     "leakage_vol_frac":        "",
 }
+
+# Automatically register abs_ versions of all signed-diff metrics.
+for _m in SIGNED_DIFF_METRICS:
+    METRIC_LOWER_IS_BETTER[f"abs_{_m}"] = True
+    METRIC_UNITS[f"abs_{_m}"]           = METRIC_UNITS.get(_m, "Gy")
 
 DEFAULT_METRICS = [
     "body_MAE_Gy",
@@ -202,9 +217,10 @@ def run_comparison(
         print(f"  Skipping {description} — data missing")
         return []
 
-    # Inner join on patient_id to ensure pairing
-    merged = df_a[["patient_id"] + metrics].merge(
-        df_b[["patient_id"] + metrics],
+    # Merge on base columns only (abs_ versions are computed below).
+    base_metrics = [m for m in metrics if not m.startswith("abs_")]
+    merged = df_a[["patient_id"] + base_metrics].merge(
+        df_b[["patient_id"] + base_metrics],
         on="patient_id", suffixes=("_a", "_b"),
     ).dropna()
 
@@ -212,17 +228,39 @@ def run_comparison(
         print(f"  Skipping {description} — no matching patients")
         return []
 
+    # Compute abs_ columns for every signed-diff metric present.
+    for m in SIGNED_DIFF_METRICS:
+        if f"{m}_a" in merged.columns:
+            merged[f"abs_{m}_a"] = merged[f"{m}_a"].abs()
+            merged[f"abs_{m}_b"] = merged[f"{m}_b"].abs()
+
+    # Extend loop: for each signed-diff metric add its abs_ counterpart.
+    all_metrics: list[str] = []
+    for m in base_metrics:
+        all_metrics.append(m)
+        if m in SIGNED_DIFF_METRICS:
+            all_metrics.append(f"abs_{m}")
+
     print(f"\n  {description}  (n={len(merged)} matched patients)")
 
     rows = []
-    for m in metrics:
+    for m in all_metrics:
         if f"{m}_a" not in merged.columns:
             continue
-        a   = merged[f"{m}_a"].values
-        b   = merged[f"{m}_b"].values
-        lib = METRIC_LOWER_IS_BETTER.get(m, True)
+        a    = merged[f"{m}_a"].values
+        b    = merged[f"{m}_b"].values
+        lib  = METRIC_LOWER_IS_BETTER.get(m, True)
         unit = METRIC_UNITS.get(m, "")
-        s   = paired_stats(a, b, m, lower_is_better=lib)
+
+        # Display label: signed → "(bias)", abs → "(accuracy)"
+        if m.startswith("abs_"):
+            display = m[4:] + " (accuracy)"
+        elif m in SIGNED_DIFF_METRICS:
+            display = m + " (bias)"
+        else:
+            display = m
+
+        s = paired_stats(a, b, m, lower_is_better=lib)
         s["comparison"]  = label
         s["description"] = description
         rows.append(s)
@@ -230,7 +268,7 @@ def run_comparison(
         unit_str = f" {unit}" if unit else ""
         sig_t = "**" if s["t_pvalue"] < 0.01 else ("*" if s["t_pvalue"] < 0.05 else "")
         print(
-            f"    {m:<30s}  Δ={s['mean_diff']:+.4f} ± {s['std_diff']:.4f}{unit_str}"
+            f"    {display:<38s}  Δ={s['mean_diff']:+.4f} ± {s['std_diff']:.4f}{unit_str}"
             f"  95%CI=[{s['ci_lo_95']:+.4f}, {s['ci_hi_95']:+.4f}]"
             f"  t_p={s['t_pvalue']:.4f}{sig_t}"
             f"  A_wins={s['pct_A_wins']}%"
