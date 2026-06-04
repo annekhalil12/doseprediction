@@ -44,23 +44,26 @@ Geometric channels are computed once from the existing pickles by `preprocessing
 
 ## Experiment status
 
-### Baseline (9-channel, no geom) — complete
-| Model | body_MAE_Gy | body_RMSE_Gy | W&B group |
-|---|---|---|---|
-| U-Net Sigmoid | **0.861 ± 0.026** | **1.514 ± 0.038** | `unet3d_ch32_sigmoid_snellius` |
-| DoseGAN Sigmoid | 0.868 ± 0.035 | 1.521 ± 0.045 | `dosegan_ngf32_sigmoid_snellius` |
+All 4 conditions use InstanceNorm(affine=True), Sigmoid output, LSGAN, 200 epochs max, patience 30, 5-fold CV.
 
-Both trained with Sigmoid activation, LSGAN, 5-fold CV. Folds 0–4 complete.
+### Baseline (9-channel, no geom)
+| Model | Status | W&B group |
+|---|---|---|
+| U-Net Sigmoid | Complete — folds 0–4 | `unet3d_ch32_sigmoid_snellius` |
+| DoseGAN Sigmoid | Complete — folds 0–4 (retrained Jun 2026 with InstanceNorm) | `dosegan_ngf32_sigmoid_snellius` |
+
+### With-geom (14-channel) — complete
+| Model | Status | W&B group |
+|---|---|---|
+| U-Net geom | Complete — folds 0–4 | `unet3d_ch32_sigmoid_geom_snellius` |
+| DoseGAN geom | Complete — folds 0–4 | `dosegan_ngf32_sigmoid_geom_snellius` |
 
 ### Ablations — complete (all negative results)
 | Ablation | Finding |
 |---|---|
-| Sigmoid vs Tanh (2×2) | Sigmoid wins every fold for both models (~4% lower MAE) |
+| Sigmoid vs Tanh (2×2, fold 0–4) | Sigmoid wins every fold for both models (~4% lower MAE) |
 | Gradient-magnitude loss λ=1.0 (fold 0) | No improvement for U-Net; +4.6% worse for DoseGAN |
 | BCE vs LSGAN (DoseGAN fold 0) | BCE val_L1=0.0195 vs LSGAN 0.0174 — worse |
-
-### With-geom (14-channel) — in progress
-Pickle augmentation running. Training (10 jobs: 5 folds × 2 models) to be submitted once pickles are ready.
 
 ## Environment
 
@@ -99,8 +102,14 @@ for fold in 0 1 2 3 4; do FOLD=$fold sbatch train_dosegan.sbatch; done
 for fold in 0 1 2 3 4; do FOLD=$fold sbatch train_unet3d.sbatch; done
 
 # ── Evaluation ─────────────────────────────────────────────────────────────
-python3 -m training.evaluate --model dosegan --fold 0   # writes CSV + W&B eval run
-python3 -m training.evaluate --model unet3d  --fold 0
+# Via SLURM (recommended):
+sbatch --export=ALL,MODEL=dosegan,FOLD=0,RUN_NAME=dosegan_ngf32_sigmoid_snellius,GEOM=0 eval.sbatch
+sbatch --export=ALL,MODEL=unet3d,FOLD=0,RUN_NAME=unet3d_ch32_sigmoid_snellius,GEOM=0 eval.sbatch
+# Geom variants (GEOM=1 is the default):
+sbatch --export=ALL,MODEL=dosegan,FOLD=0,RUN_NAME=dosegan_ngf32_sigmoid_geom_snellius eval.sbatch
+
+# Directly (no GPU job required for CPU-only metrics):
+python3 -m training.evaluate --model dosegan --fold 0 --run-name dosegan_ngf32_sigmoid_snellius --no-geom
 
 # ── Monitoring ─────────────────────────────────────────────────────────────
 squeue -u $USER
@@ -158,7 +167,7 @@ data/               split.csv committed; pickles and outputs gitignored
 3D U-Net generator with attention gates at every skip connection (`UnetSkipConnectionBlock3d` + `AttGate`). PatchGAN discriminator (`NLayerDiscriminator`). LSGAN loss (`USE_LSGAN=True`). Sigmoid output activation (empirically selected over Tanh via 5-fold ablation). ~29.6M parameters. Adapted from GhTara/Dose_Prediction.
 
 **3D U-Net** (`models/unet3d.py`)
-MONAI 5-level residual U-Net, `CHANNELS=(32,64,128,256,256,256)`. Sigmoid output activation. ~21.8M parameters.
+MONAI 6-level residual U-Net, `CHANNELS=(32,64,128,256,256,256)`, 5 downsampling strides. Sigmoid output activation. ~21.8M parameters.
 
 Both models accept `(9, 128, 256, 320)` input for the baseline condition and `(14, 128, 256, 320)` for the with-geom condition. Output: normalised dose `(1, 128, 256, 320)` in [0,1] — multiply by 50 to recover Gy.
 
