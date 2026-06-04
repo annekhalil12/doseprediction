@@ -21,8 +21,10 @@ FOLD=${FOLD:-0}
 RUN_NAME=${RUN_NAME:-}
 GEOM=${GEOM:-1}
 
-GEOM_ARG=""
-if [ "$GEOM" = "0" ]; then GEOM_ARG="--no-geom"; fi
+if   [ "$GEOM" = "1" ]; then GEOM_ARG="--geom"
+elif [ "$GEOM" = "0" ]; then GEOM_ARG="--no-geom"
+else GEOM_ARG=""
+fi
 
 RUN_NAME_ARG=""
 if [ -n "$RUN_NAME" ]; then RUN_NAME_ARG="--run-name $RUN_NAME"; fi

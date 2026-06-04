@@ -321,8 +321,11 @@ if __name__ == "__main__":
                         help="Override cfg.OUTPUT_ACTIVATION (U-Net only).")
     parser.add_argument("--skip-gamma", dest="skip_gamma", action="store_true",
                         help="Skip gamma pass rate (expensive 3D computation).")
-    parser.add_argument("--no-geom", dest="no_geom", action="store_true", default=False,
-                        help="Force baseline mode: USE_GEOM_CHANNELS=False, INPUT_NC=9.")
+    geom_group = parser.add_mutually_exclusive_group()
+    geom_group.add_argument("--geom",    dest="geom", action="store_true",  default=None,
+                            help="Force geom mode: USE_GEOM_CHANNELS=True, INPUT_NC=14.")
+    geom_group.add_argument("--no-geom", dest="geom", action="store_false",
+                            help="Force baseline mode: USE_GEOM_CHANNELS=False, INPUT_NC=9.")
     args = parser.parse_args()
 
     if args.fold is None:
@@ -341,5 +344,5 @@ if __name__ == "__main__":
         run_name    = args.run_name,
         activation  = args.activation,
         skip_gamma  = args.skip_gamma,
-        use_geom    = False if args.no_geom else None,
+        use_geom    = args.geom,
     )
