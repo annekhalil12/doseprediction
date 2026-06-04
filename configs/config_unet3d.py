@@ -25,6 +25,7 @@ NUM_WORKERS = 4
 # ── Model architecture ─────────────────────────────────────────────────────
 INPUT_NC      = 9    # 9 without geom (8 masks + sCT); 14 with geom (+ 5 geom channels)
 USE_GEOM_CHANNELS = False
+USE_FLIPS         = False  # disabled for all conditions to keep augmentation policy identical
 OUTPUT_NC     = 1    # predicted dose
 CHANNELS      = (32, 64, 128, 256, 256, 256)  # feature maps at each U-Net level
 STRIDES       = (2, 2, 2, 2, 2)              # downsampling factor per transition

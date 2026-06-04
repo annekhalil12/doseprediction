@@ -31,6 +31,7 @@ NUM_WORKERS = 4    # reduce to 0 if DataLoader throws errors on Windows
 # ── Model architecture ─────────────────────────────────────────────────────
 INPUT_NC          = 9         # 9 without geom (8 masks + sCT); 14 with geom (+ 5 geom channels)
 USE_GEOM_CHANNELS = False
+USE_FLIPS         = False  # disabled for all conditions to keep augmentation policy identical
 OUTPUT_NC         = 1         # predicted dose volume
 OUTPUT_ACTIVATION = "sigmoid" # "sigmoid" (empirically selected) or "tanh"
 NGF               = 32        # base number of generator filters — doubles at each U-Net level

@@ -128,6 +128,7 @@ class LUNDPROBEDataset(Dataset):
         fold:               Optional[int] = None,
         channels:           List[int] | None = None,
         use_geom_channels:  bool = False,
+        use_flips:          bool = True,
     ) -> None:
         super().__init__()
 
@@ -207,13 +208,11 @@ class LUNDPROBEDataset(Dataset):
         # Transforms are only active during training — val and test always
         # see the original unmodified volumes for reproducible evaluation.
         if split == "train":
-            # Flip augmentation is disabled when geometric channels are in use.
-            # The directional channels (dir_z, dir_x) encode absolute position
-            # relative to the PTV centroid; a spatial flip moves the values but
-            # does not invert them, so the encoding becomes inconsistent with the
-            # flipped anatomy. Disabling flips is the cleanest solution without
-            # recomputing the channels post-augmentation.
-            if not use_geom_channels:
+            # Flip augmentation: disabled when geometric channels are in use
+            # (directional channels are not flip-invariant) OR when use_flips=False.
+            # For a fair 4-condition comparison all conditions use use_flips=False
+            # so augmentation policy is identical across baseline and geom runs.
+            if use_flips and not use_geom_channels:
                 self.geometric_transform = Compose([
                     RandFlipd(
                         keys=["input", "dose", "ptv_mask", "rectum_mask", "bladder_mask"],

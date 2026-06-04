@@ -231,6 +231,11 @@ def main():
                             help="Force geom mode: USE_GEOM_CHANNELS=True, INPUT_NC=14.")
     geom_group.add_argument("--no-geom", dest="geom", action="store_false",
                             help="Force baseline mode: USE_GEOM_CHANNELS=False, INPUT_NC=9.")
+    flip_group = parser.add_mutually_exclusive_group()
+    flip_group.add_argument("--flip",    dest="flips", action="store_true",  default=None,
+                            help="Enable spatial flip augmentation.")
+    flip_group.add_argument("--no-flip", dest="flips", action="store_false",
+                            help="Disable spatial flip augmentation (default for all conditions).")
     parser.add_argument("--overwrite", action="store_true",
                         help="Overwrite an existing best checkpoint instead of refusing to start.")
     args, _ = parser.parse_known_args()
@@ -238,6 +243,8 @@ def main():
         cfg.FOLD = args.fold
     if args.geom is not None:
         cfg.USE_GEOM_CHANNELS = args.geom
+    if args.flips is not None:
+        cfg.USE_FLIPS = args.flips
         cfg.INPUT_NC = 14 if args.geom else 9
         if args.geom and "geom" not in cfg.RUN_NAME:
             cfg.RUN_NAME = cfg.RUN_NAME.replace("_snellius", "_geom_snellius")
@@ -291,11 +298,13 @@ def main():
         split_csv=cfg.SPLIT_CSV, pickle_dir=cfg.PICKLE_DIR,
         split="train", fold=cfg.FOLD,
         use_geom_channels=cfg.USE_GEOM_CHANNELS,
+        use_flips=cfg.USE_FLIPS,
     )
     val_ds = LUNDPROBEDataset(
         split_csv=cfg.SPLIT_CSV, pickle_dir=cfg.PICKLE_DIR,
         split="val", fold=cfg.FOLD,
         use_geom_channels=cfg.USE_GEOM_CHANNELS,
+        use_flips=cfg.USE_FLIPS,
     )
     train_loader = DataLoader(
         train_ds, batch_size=cfg.BATCH_SIZE,
