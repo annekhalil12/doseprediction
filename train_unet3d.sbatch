@@ -3,7 +3,7 @@
 #SBATCH --partition=gpu_h100
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
-#SBATCH --cpus-per-task=16
+#SBATCH --cpus-per-task=8
 #SBATCH --gpus=1
 #SBATCH --mem=32G
 #SBATCH --time=10:00:00
