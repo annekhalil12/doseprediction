@@ -25,6 +25,7 @@ data/zotero_papers.json
 outputs/checkpoints_*/
 outputs/visualisations/
 outputs/logs/
+outputs/sanity/
 
 # Evaluation — ignore stale/archived runs; track current valid CSVs
 outputs/evaluation/baseline_sigmoid/

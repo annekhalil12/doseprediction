@@ -6,6 +6,7 @@
 import argparse
 import sys
 import logging
+from pathlib import Path
 import numpy as np
 import wandb
 import torch
@@ -258,6 +259,19 @@ def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     log.info(f"Training on: {device} | fold={cfg.FOLD}")
 
+    from training.manifest import write_start, write_end
+    eval_csv = Path("outputs/evaluation") / f"{cfg.RUN_NAME}_fold{cfg.FOLD}_val.csv"
+    manifest_path = write_start(
+        run_name        = cfg.RUN_NAME,
+        fold            = cfg.FOLD,
+        model_type      = "unet3d",
+        cfg             = cfg,
+        config_file     = "configs/config_unet3d.py",
+        checkpoint_path = cfg.CKPT_DIR / f"{cfg.RUN_NAME}_fold{cfg.FOLD}_best.pt",
+        eval_csv_path   = eval_csv,
+    )
+    _manifest_start = None  # set after wandb.init
+
     model = UNet3d(
         in_channels       = cfg.INPUT_NC,
         out_channels      = cfg.OUTPUT_NC,
@@ -322,6 +336,17 @@ def main():
     ckpt_path = cfg.CKPT_DIR / f"{cfg.RUN_NAME}_fold{cfg.FOLD}_best.pt"
     if ckpt_path.exists():
         wandb.save(str(ckpt_path), policy="now")
+
+    import json as _json
+    _start_utc = _json.load(open(manifest_path))["training_start_utc"]
+    write_end(
+        manifest_path  = manifest_path,
+        wandb_run_id   = wandb.run.id if wandb.run else None,
+        best_val_loss  = best_val_L1,
+        best_dvh_score = best_dvh_score,
+        epochs_trained = epoch,
+        start_utc      = _start_utc,
+    )
 
     wandb.finish()
 

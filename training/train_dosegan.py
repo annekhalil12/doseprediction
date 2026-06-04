@@ -321,6 +321,18 @@ def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     log.info(f"Training on: {device} | fold={cfg.FOLD}")
 
+    from training.manifest import write_start, write_end
+    eval_csv = Path("outputs/evaluation") / f"{cfg.RUN_NAME}_fold{cfg.FOLD}_val.csv"
+    manifest_path = write_start(
+        run_name        = cfg.RUN_NAME,
+        fold            = cfg.FOLD,
+        model_type      = "dosegan",
+        cfg             = cfg,
+        config_file     = "configs/config_dosegan.py",
+        checkpoint_path = cfg.CKPT_DIR / f"{cfg.RUN_NAME}_fold{cfg.FOLD}_best.pt",
+        eval_csv_path   = eval_csv,
+    )
+
     generator = UnetGenerator3d(
         input_nc=cfg.INPUT_NC, output_nc=cfg.OUTPUT_NC,
         ngf=cfg.NGF, output_activation=cfg.OUTPUT_ACTIVATION,
@@ -408,6 +420,17 @@ def main():
     best_ckpt_path = cfg.CKPT_DIR / f"{cfg.RUN_NAME}_fold{cfg.FOLD}_best.pt"
     if best_ckpt_path.exists():
         wandb.save(str(best_ckpt_path), policy="now")
+
+    import json as _json
+    _start_utc = _json.load(open(manifest_path))["training_start_utc"]
+    write_end(
+        manifest_path  = manifest_path,
+        wandb_run_id   = wandb.run.id if wandb.run else None,
+        best_val_loss  = best_val_L1,
+        best_dvh_score = best_dvh_score,
+        epochs_trained = epoch,
+        start_utc      = _start_utc,
+    )
 
     wandb.finish()  # cleanly close the W&B run when training ends
 
