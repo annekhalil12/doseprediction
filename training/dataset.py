@@ -216,12 +216,12 @@ class LUNDPROBEDataset(Dataset):
             if not use_geom_channels:
                 self.geometric_transform = Compose([
                     RandFlipd(
-                        keys=["input", "dose"],
+                        keys=["input", "dose", "ptv_mask", "rectum_mask", "bladder_mask"],
                         prob=0.5,
                         spatial_axis=0,   # flip along depth axis
                     ),
                     RandFlipd(
-                        keys=["input", "dose"],
+                        keys=["input", "dose", "ptv_mask", "rectum_mask", "bladder_mask"],
                         prob=0.5,
                         spatial_axis=2,   # flip left-right
                     ),
@@ -323,14 +323,21 @@ class LUNDPROBEDataset(Dataset):
 
         # ── Apply augmentation (training only) ────────────────────────────
         if self.geometric_transform is not None:
-            # MONAI dict transforms expect a dict — we pass input and dose
-            # together so they are transformed with the same random parameters.
+            # All spatially-corresponding tensors must be flipped together so
+            # the DVH loss (which uses ptv/rectum/bladder masks) sees consistent
+            # geometry after augmentation.
             augmented = self.geometric_transform({
-                "input": input_tensor,
-                "dose":  dose_tensor,
+                "input":        input_tensor,
+                "dose":         dose_tensor,
+                "ptv_mask":     ptv_tensor,
+                "rectum_mask":  rectum_tensor,
+                "bladder_mask": bladder_tensor,
             })
-            input_tensor = augmented["input"]
-            dose_tensor  = augmented["dose"]
+            input_tensor   = augmented["input"]
+            dose_tensor    = augmented["dose"]
+            ptv_tensor     = augmented["ptv_mask"]
+            rectum_tensor  = augmented["rectum_mask"]
+            bladder_tensor = augmented["bladder_mask"]
 
         if self.intensity_transform is not None and self._sct_idx is not None:
             # Extract sCT channel, scale/shift it, put it back.
