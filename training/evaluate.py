@@ -4,8 +4,7 @@
 # Run from the project root:
 #   python -m training.evaluate --model dosegan [--fold N] [--run-name NAME] [--skip-gamma]
 #   python -m training.evaluate --model unet3d  [--fold N] [--run-name NAME] [--skip-gamma] [--activation {sigmoid,tanh}]
-#
-# *** Do NOT add a --split test flag until all model selection is complete. ***
+#   python -m training.evaluate --model dosegan --split test [--run-name NAME] [--skip-gamma]
 
 import argparse
 import csv
@@ -163,14 +162,18 @@ def evaluate(model_type: str, fold: int, split: str,
             pred_dose    = model(real_input)
             inference_ms = (time.perf_counter() - t0) * 1000
 
-            pred_gy = pred_dose[0, 0].cpu().numpy() * DOSE_SCALE
-            true_gy = real_dose[0, 0].cpu().numpy() * DOSE_SCALE
+            raw_pred_gy = pred_dose[0, 0].cpu().numpy() * DOSE_SCALE
+            true_gy     = real_dose[0, 0].cpu().numpy() * DOSE_SCALE
 
             body_mask        = real_input[0, 7].cpu().numpy()
             ptv_mask         = batch["ptv_mask"][0, 0].numpy()
             rectum_mask      = batch["rectum_mask"][0, 0].numpy()
             bladder_mask     = batch["bladder_mask"][0, 0].numpy()
             penile_bulb_mask = real_input[0, 6].cpu().numpy()
+
+            # Leakage from raw prediction, then apply body mask.
+            raw_leakage = compute_outside_body_leakage(raw_pred_gy, body_mask)
+            pred_gy     = raw_pred_gy * (body_mask > 0.5)
 
             body_mae  = compute_mae(pred_gy,  true_gy, body_mask)
             body_rmse = compute_rmse(pred_gy, true_gy, body_mask)
@@ -207,8 +210,7 @@ def evaluate(model_type: str, fold: int, split: str,
                 gamma_2_2 = compute_gamma_passrate(pred_gy, true_gy, body_mask,
                                                    dose_percent=2.0, distance_mm=2.0)
 
-            isodose  = compute_isodose_metrics(pred_gy, true_gy, ptv_mask, body_mask=body_mask)
-            leakage  = compute_outside_body_leakage(pred_gy, body_mask)
+            isodose = compute_isodose_metrics(pred_gy, true_gy, ptv_mask, body_mask=body_mask)
 
             row = {
                 "patient_id":              patient_id,
@@ -242,7 +244,8 @@ def evaluate(model_type: str, fold: int, split: str,
                 "gamma_3pct_3mm":          gamma_3_3,
                 "gamma_2pct_2mm":          gamma_2_2,
                 **isodose,
-                **leakage,
+                "raw_leakage_mean_pred_Gy": raw_leakage["leakage_mean_pred_Gy"],
+                "raw_leakage_vol_frac":     raw_leakage["leakage_vol_frac"],
             }
             rows.append(row)
 
@@ -318,6 +321,211 @@ def evaluate(model_type: str, fold: int, split: str,
     wandb.finish()
 
 
+def evaluate_ensemble(model_type: str, run_name=None, activation=None,
+                      skip_gamma: bool = False, use_geom=None,
+                      overwrite: bool = False) -> None:
+    """Five-fold ensemble evaluation on the held-out test split.
+
+    Loads all five fold checkpoints, averages their raw predictions voxel-wise
+    per patient, then applies the body-mask post-processing policy before
+    computing all metrics. Saves one file per condition:
+        outputs/evaluation/{run_name}_test.csv
+    """
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    log.info(f"Ensemble test evaluation on: {device} | model={model_type}")
+
+    # Load cfg via fold-0 (only needed for dataset params and run_name).
+    _, cfg, _, wandb_extra = _load_model_and_cfg(
+        model_type, fold=0, run_name=run_name, activation=activation,
+        device=device, use_geom=use_geom,
+    )
+
+    out_path = Path("outputs/evaluation") / f"{cfg.RUN_NAME}_test.csv"
+    if out_path.exists() and not overwrite:
+        raise FileExistsError(
+            f"Evaluation CSV already exists: {out_path}\n"
+            "Pass --overwrite to replace it."
+        )
+    if out_path.exists() and overwrite:
+        log.warning(f"--overwrite: replacing existing results: {out_path}")
+
+    # Load all five fold models.
+    models = []
+    for fold in range(5):
+        m, _, ckpt, _ = _load_model_and_cfg(
+            model_type, fold=fold, run_name=run_name, activation=activation,
+            device=device, use_geom=use_geom,
+        )
+        m.eval()
+        models.append(m)
+        log.info(
+            f"  Fold {fold} checkpoint loaded — epoch {ckpt['epoch']} | "
+            f"best_val_L1={ckpt['best_val_loss']:.4f}"
+        )
+
+    ds = LUNDPROBEDataset(
+        split_csv=cfg.SPLIT_CSV, pickle_dir=cfg.PICKLE_DIR,
+        split="test", fold=None,
+        use_geom_channels=cfg.USE_GEOM_CHANNELS,
+    )
+    loader  = DataLoader(ds, batch_size=1, shuffle=False, num_workers=0)
+    acq_map = load_acq_group_map(cfg.SPLIT_CSV)
+    log.info(f"Test patients: {len(ds)}")
+
+    wandb.init(
+        project  = cfg.PROJECT_NAME,
+        name     = f"{cfg.RUN_NAME}_ensemble_test",
+        group    = cfg.RUN_NAME,
+        job_type = "eval",
+        config   = {"split": "test", "model": model_type,
+                    "n_ensemble": 5, **wandb_extra},
+    )
+
+    rows = []
+    with torch.no_grad():
+        for i, batch in enumerate(loader):
+            patient_id = batch["patient_id"][0]
+            real_input = batch["input"].to(device)
+            real_dose  = batch["dose"].to(device)
+
+            # Average raw predictions across all five fold models.
+            t0 = time.perf_counter()
+            raw_preds = [m(real_input)[0, 0].cpu().numpy() * DOSE_SCALE
+                         for m in models]
+            inference_ms = (time.perf_counter() - t0) * 1000
+            raw_pred_gy  = np.mean(raw_preds, axis=0)
+
+            true_gy          = real_dose[0, 0].cpu().numpy() * DOSE_SCALE
+            body_mask        = real_input[0, 7].cpu().numpy()
+            ptv_mask         = batch["ptv_mask"][0, 0].numpy()
+            rectum_mask      = batch["rectum_mask"][0, 0].numpy()
+            bladder_mask     = batch["bladder_mask"][0, 0].numpy()
+            penile_bulb_mask = real_input[0, 6].cpu().numpy()
+
+            # Leakage from raw ensemble prediction, then apply body mask.
+            raw_leakage = compute_outside_body_leakage(raw_pred_gy, body_mask)
+            pred_gy     = raw_pred_gy * (body_mask > 0.5)
+
+            body_mae  = compute_mae(pred_gy,  true_gy, body_mask)
+            body_rmse = compute_rmse(pred_gy, true_gy, body_mask)
+            ptv_mae   = compute_mae(pred_gy,  true_gy, ptv_mask)
+            ptv_rmse  = compute_rmse(pred_gy, true_gy, ptv_mask)
+            rect_mae  = compute_mae(pred_gy,  true_gy, rectum_mask)
+            rect_rmse = compute_rmse(pred_gy, true_gy, rectum_mask)
+            blad_mae  = compute_mae(pred_gy,  true_gy, bladder_mask)
+            blad_rmse = compute_rmse(pred_gy, true_gy, bladder_mask)
+
+            ptv_dvh         = dvh_endpoints(pred_gy, true_gy, ptv_mask)
+            rectum_dvh      = dvh_endpoints(pred_gy, true_gy, rectum_mask)
+            bladder_dvh     = dvh_endpoints(pred_gy, true_gy, bladder_mask)
+            penile_bulb_dvh = dvh_endpoints(pred_gy, true_gy, penile_bulb_mask)
+
+            bnd_ptv  = compute_boundary_mae(pred_gy, true_gy, ptv_mask)
+            bnd_rect = compute_boundary_mae(pred_gy, true_gy, rectum_mask) \
+                       if (rectum_mask > 0.5).sum() > 0 else float("nan")
+            bnd_blad = compute_boundary_mae(pred_gy, true_gy, bladder_mask) \
+                       if (bladder_mask > 0.5).sum() > 0 else float("nan")
+
+            presc             = compute_D95(true_gy, ptv_mask)
+            v_presc_rect_pred = compute_Vx(pred_gy, rectum_mask,  presc)
+            v_presc_rect_true = compute_Vx(true_gy, rectum_mask,  presc)
+            v_presc_blad_pred = compute_Vx(pred_gy, bladder_mask, presc)
+            v_presc_blad_true = compute_Vx(true_gy, bladder_mask, presc)
+
+            if skip_gamma:
+                gamma_3_3 = float("nan")
+                gamma_2_2 = float("nan")
+            else:
+                gamma_3_3 = compute_gamma_passrate(pred_gy, true_gy, body_mask,
+                                                   dose_percent=3.0, distance_mm=3.0)
+                gamma_2_2 = compute_gamma_passrate(pred_gy, true_gy, body_mask,
+                                                   dose_percent=2.0, distance_mm=2.0)
+
+            isodose = compute_isodose_metrics(pred_gy, true_gy, ptv_mask, body_mask=body_mask)
+
+            row = {
+                "patient_id":              patient_id,
+                "acquisition_group":       acq_map.get(patient_id, "unknown"),
+                "split":                   "test",
+                "fold":                    "ensemble",
+                "model":                   model_type,
+                "inference_time_ms":       inference_ms,
+                "body_MAE_Gy":             body_mae,
+                "body_RMSE_Gy":            body_rmse,
+                "ptv_MAE_Gy":              ptv_mae,
+                "ptv_RMSE_Gy":             ptv_rmse,
+                "rectum_MAE_Gy":           rect_mae,
+                "rectum_RMSE_Gy":          rect_rmse,
+                "bladder_MAE_Gy":          blad_mae,
+                "bladder_RMSE_Gy":         blad_rmse,
+                **{f"ptv_{k}":         v for k, v in ptv_dvh.items()},
+                **{f"rectum_{k}":      v for k, v in rectum_dvh.items()},
+                **{f"bladder_{k}":     v for k, v in bladder_dvh.items()},
+                **{f"penile_bulb_{k}": v for k, v in penile_bulb_dvh.items()},
+                "boundary_MAE_ptv_Gy":     bnd_ptv,
+                "boundary_MAE_rectum_Gy":  bnd_rect,
+                "boundary_MAE_bladder_Gy": bnd_blad,
+                "V_presc_rectum_pred":     v_presc_rect_pred,
+                "V_presc_rectum_true":     v_presc_rect_true,
+                "V_presc_rectum_diff":     v_presc_rect_pred - v_presc_rect_true,
+                "V_presc_bladder_pred":    v_presc_blad_pred,
+                "V_presc_bladder_true":    v_presc_blad_true,
+                "V_presc_bladder_diff":    v_presc_blad_pred - v_presc_blad_true,
+                "prescription_dose_Gy":    float(presc),
+                "gamma_3pct_3mm":          gamma_3_3,
+                "gamma_2pct_2mm":          gamma_2_2,
+                **isodose,
+                "raw_leakage_mean_pred_Gy": raw_leakage["leakage_mean_pred_Gy"],
+                "raw_leakage_vol_frac":     raw_leakage["leakage_vol_frac"],
+            }
+            rows.append(row)
+
+            log.info(
+                f"[{i+1:3d}/{len(ds)}] {patient_id} | "
+                f"body MAE={body_mae:.3f} Gy | "
+                f"PTV D95 diff={ptv_dvh['D95_diff']:+.2f} Gy | "
+                f"raw leakage={raw_leakage['leakage_mean_pred_Gy']:.1f} Gy"
+            )
+
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(out_path, "w", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=rows[0].keys())
+        writer.writeheader()
+        writer.writerows(rows)
+    log.info(f"\nResults saved: {out_path}")
+
+    fieldnames = list(rows[0].keys())
+    wandb.log({"per_patient": wandb.Table(
+        columns=fieldnames, data=[[r[c] for c in fieldnames] for r in rows]
+    )})
+
+    log.info("\n── Overall (test ensemble) ──────────────────────────────────")
+    for key, label in [
+        ("body_MAE_Gy",               "body MAE        "),
+        ("body_RMSE_Gy",              "body RMSE       "),
+        ("ptv_MAE_Gy",                "PTV  MAE        "),
+        ("boundary_MAE_ptv_Gy",       "bnd MAE PTV     "),
+        ("raw_leakage_mean_pred_Gy",  "raw leakage     "),
+    ]:
+        vals = [r[key] for r in rows]
+        log.info(f"  {label}: {np.nanmean(vals):.3f} ± {np.nanstd(vals):.3f}")
+        _wandb_summary_stats(wandb, key, vals)
+
+    for grp in ("oldAcq", "newAcq"):
+        grp_rows = [r for r in rows if r["acquisition_group"] == grp]
+        if not grp_rows:
+            continue
+        g_maes = [r["body_MAE_Gy"] for r in grp_rows]
+        log.info(f"\n── {grp} (n={len(grp_rows)}) ────────────────────────────────")
+        log.info(f"  body MAE: {np.mean(g_maes):.3f} ± {np.std(g_maes):.3f} Gy")
+        wandb.summary[f"body_MAE_Gy_mean_{grp}"] = float(np.mean(g_maes))
+        wandb.summary[f"body_MAE_Gy_std_{grp}"]  = float(np.std(g_maes))
+
+    wandb.summary["n_patients"] = len(rows)
+    wandb.save(str(out_path), policy="now")
+    wandb.finish()
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description="Evaluate DoseGAN or U-Net on the validation (or test) split."
@@ -330,6 +538,9 @@ if __name__ == "__main__":
                         help="Override cfg.RUN_NAME.")
     parser.add_argument("--activation", choices=["sigmoid", "tanh"], default=None,
                         help="Override cfg.OUTPUT_ACTIVATION (U-Net only).")
+    parser.add_argument("--split", choices=["val", "test"], default="val",
+                        help="Evaluation split. Use 'test' only after all model "
+                             "selection decisions are locked.")
     parser.add_argument("--skip-gamma", dest="skip_gamma", action="store_true",
                         help="Skip gamma pass rate (expensive 3D computation).")
     parser.add_argument("--overwrite", action="store_true",
@@ -351,13 +562,23 @@ if __name__ == "__main__":
     else:
         fold = args.fold
 
-    evaluate(
-        model_type  = args.model,
-        fold        = fold,
-        split       = "val",
-        run_name    = args.run_name,
-        activation  = args.activation,
-        skip_gamma  = args.skip_gamma,
-        use_geom    = args.geom,
-        overwrite   = args.overwrite,
-    )
+    if args.split == "test":
+        evaluate_ensemble(
+            model_type = args.model,
+            run_name   = args.run_name,
+            activation = args.activation,
+            skip_gamma = args.skip_gamma,
+            use_geom   = args.geom,
+            overwrite  = args.overwrite,
+        )
+    else:
+        evaluate(
+            model_type  = args.model,
+            fold        = fold,
+            split       = args.split,
+            run_name    = args.run_name,
+            activation  = args.activation,
+            skip_gamma  = args.skip_gamma,
+            use_geom    = args.geom,
+            overwrite   = args.overwrite,
+        )

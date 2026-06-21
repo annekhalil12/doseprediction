@@ -1,0 +1,5 @@
+condition,model,lambda_grad,fold,n_patients,body_MAE_Gy,body_RMSE_Gy,val_L1_norm,source,notes
+dosegan_baseline,dosegan,0.0,0,74,0.859661,1.518133,0.017193,"evaluate.py (pre-retrain checkpoint, May 27)",fold-0 only; comparator for grad ablation
+unet3d_baseline,unet3d,0.0,0,74,0.862997,1.514341,0.01726,"evaluate.py (pre-retrain checkpoint, May 27)",fold-0 only; comparator for grad ablation
+dosegan_grad1.0,dosegan,1.0,0,74,0.915,,0.0183,training log SLURM 23059382 (best epoch 27),"fold-0 only; checkpoint predates commit 728fdef (outer_block kernel_size 4→3; weight shapes incompatible); body_MAE_Gy and val_L1_norm from training log only — ablation result is negative (worse than baseline) regardless"
+unet3d_grad1.0,unet3d,1.0,0,74,0.87,,0.0174,training log SLURM 23059383 (best epoch 68),"fold-0 only; checkpoint predates commit 4475681 (BatchNorm→InstanceNorm; weight keys incompatible); body_MAE_Gy approx (val_L1_norm 0.0174 × 50) and val_L1_norm from training log only — ablation result is negative (no improvement over baseline) regardless"

@@ -97,8 +97,8 @@ SPATIAL_BOUNDARY = [
     ("Dice_80iso",              "Dice 80% iso",        "",    False),
     ("Dice_50iso",              "Dice 50% iso",        "",    False),
     ("HD95_100iso_mm",          "HD95 100% iso",       "mm",  False),
-    ("leakage_mean_pred_Gy",    "Outside-body leak",   "Gy",  False),
-    ("leakage_vol_frac",        "Leakage vol frac",    "",    False),
+    ("raw_leakage_mean_pred_Gy", "Raw outside-body leak","Gy",  False),
+    ("raw_leakage_vol_frac",    "Raw leakage vol frac","",    False),
 ]
 
 SECTIONS = [

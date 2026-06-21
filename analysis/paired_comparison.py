@@ -97,8 +97,8 @@ METRIC_LOWER_IS_BETTER: dict[str, bool] = {
     "Dice_95iso":              False,
     "Dice_80iso":              False,
     "Dice_50iso":              False,
-    "leakage_mean_pred_Gy":    True,
-    "leakage_vol_frac":        True,
+    "raw_leakage_mean_pred_Gy": True,
+    "raw_leakage_vol_frac":     True,
 }
 
 METRIC_UNITS: dict[str, str] = {
@@ -122,8 +122,8 @@ METRIC_UNITS: dict[str, str] = {
     "Dice_95iso":              "",
     "Dice_80iso":              "",
     "Dice_50iso":              "",
-    "leakage_mean_pred_Gy":    "Gy",
-    "leakage_vol_frac":        "",
+    "raw_leakage_mean_pred_Gy": "Gy",
+    "raw_leakage_vol_frac":     "",
 }
 
 # Automatically register abs_ versions of all signed-diff metrics.
@@ -137,6 +137,9 @@ DEFAULT_METRICS = [
     "ptv_MAE_Gy",
     "rectum_MAE_Gy",
     "bladder_MAE_Gy",
+    "boundary_MAE_ptv_Gy",
+    "boundary_MAE_rectum_Gy",
+    "boundary_MAE_bladder_Gy",
     "ptv_D95_diff",
     "ptv_Dmean_diff",
     "rectum_Dmean_diff",
@@ -321,6 +324,117 @@ def run_comparison(
     return rows
 
 
+def run_interaction_test(data: dict, metrics: list) -> list:
+    """Difference-in-differences interaction test: geom effect in DoseGAN vs U-Net.
+
+    Per patient:
+        delta_unet   = unet_geom_metric  − unet_base_metric
+        delta_dgan   = dgan_geom_metric  − dgan_base_metric
+        interaction  = delta_dgan − delta_unet
+
+    H0: E[interaction] = 0, tested with a one-sample t-test on the interaction
+    vector (equivalent to a paired t-test on the two geom-effect vectors).
+    A positive interaction means the geom benefit is larger for DoseGAN.
+
+    BH-FDR correction applied across all metrics within this test.
+    """
+    keys_needed = ["unet_base", "unet_geom", "dgan_base", "dgan_geom"]
+    if any(data.get(k) is None for k in keys_needed):
+        print("  Skipping interaction test — one or more conditions missing")
+        return []
+
+    base_metrics = [m for m in metrics if not m.startswith("abs_")]
+
+    # Rename columns with explicit suffixes before merging to avoid pandas
+    # suffix-collision on a four-way merge.
+    def _suffix(df, suf):
+        return df[["patient_id"] + base_metrics].rename(
+            columns={m: f"{m}{suf}" for m in base_metrics}
+        )
+
+    merged = (
+        _suffix(data["unet_base"], "_ub")
+        .merge(_suffix(data["unet_geom"], "_ug"), on="patient_id")
+        .merge(_suffix(data["dgan_base"], "_db"), on="patient_id")
+        .merge(_suffix(data["dgan_geom"], "_dg"), on="patient_id")
+        .dropna()
+    )
+
+    if len(merged) == 0:
+        print("  No patients matched across all four conditions — interaction skipped")
+        return []
+
+    # Compute abs_ columns for signed-diff metrics.
+    for m in SIGNED_DIFF_METRICS:
+        for suf in ("_ub", "_ug", "_db", "_dg"):
+            col = f"{m}{suf}"
+            if col in merged.columns:
+                merged[f"abs_{m}{suf}"] = merged[col].abs()
+
+    all_metrics: list[str] = []
+    for m in base_metrics:
+        all_metrics.append(m)
+        if m in SIGNED_DIFF_METRICS:
+            all_metrics.append(f"abs_{m}")
+
+    print(f"\n── Model × Geometry interaction  (n={len(merged)} matched patients) ──")
+    print("   interaction = (DoseGAN_geom − DoseGAN_base) − (U-Net_geom − U-Net_base)")
+    print("   positive = geom benefit larger for DoseGAN; negative = larger for U-Net")
+
+    rows = []
+    for m in all_metrics:
+        ub_col, ug_col = f"{m}_ub", f"{m}_ug"
+        db_col, dg_col = f"{m}_db", f"{m}_dg"
+        if ub_col not in merged.columns:
+            continue
+
+        delta_unet  = merged[ug_col].values - merged[ub_col].values
+        delta_dgan  = merged[dg_col].values - merged[db_col].values
+        interaction = delta_dgan - delta_unet
+
+        n       = len(interaction)
+        mean_i  = interaction.mean()
+        std_i   = interaction.std(ddof=1)
+        ci_lo, ci_hi = bootstrap_ci(interaction)
+        t_stat, t_p  = stats.ttest_1samp(interaction, 0)
+        cohens_dz = float(mean_i / std_i) if std_i > 1e-12 else 0.0
+
+        shapiro_p = float("nan")
+        if 3 <= n <= 5000:
+            _, shapiro_p = stats.shapiro(interaction)
+
+        sig = "**" if t_p < 0.01 else ("*" if t_p < 0.05 else "")
+        print(
+            f"  {m:<38s}  Δ={mean_i:+.4f} ± {std_i:.4f}"
+            f"  95%CI=[{ci_lo:+.4f}, {ci_hi:+.4f}]"
+            f"  dz={cohens_dz:+.3f}"
+            f"  t_p={t_p:.4f}{sig}"
+        )
+
+        rows.append({
+            "metric":            m,
+            "n_patients":        n,
+            "mean_interaction":  round(mean_i, 4),
+            "std_interaction":   round(std_i, 4),
+            "ci_lo_95":          round(ci_lo, 4),
+            "ci_hi_95":          round(ci_hi, 4),
+            "cohens_dz":         round(cohens_dz, 3),
+            "shapiro_p":         round(shapiro_p, 4) if not np.isnan(shapiro_p) else "n/a",
+            "t_stat":            round(t_stat, 3),
+            "t_pvalue":          round(t_p, 4),
+            "t_pvalue_fdr":      float("nan"),
+        })
+
+    # BH-FDR across all metrics in this test.
+    if rows:
+        t_raw = np.array([r["t_pvalue"] for r in rows], dtype=float)
+        t_adj = _bh_fdr(t_raw)
+        for r, adj in zip(rows, t_adj):
+            r["t_pvalue_fdr"] = round(float(adj), 4)
+
+    return rows
+
+
 def plot_paired_differences(all_rows: list, metrics: list) -> None:
     """Forest-plot-style: mean difference ± 95% CI per comparison per metric."""
     df = pd.DataFrame(all_rows)
@@ -427,6 +541,18 @@ def main():
             "pct_A_wins"]
     df_all[cols].to_csv(out_csv, index=False)
     print(f"\n  Table saved: {out_csv}")
+
+    # ── Model × Geometry interaction ──────────────────────────────────────
+    interaction_rows = run_interaction_test(data, metrics)
+    if interaction_rows:
+        df_int = pd.DataFrame(interaction_rows)
+        int_cols = ["metric", "n_patients",
+                    "mean_interaction", "std_interaction", "ci_lo_95", "ci_hi_95",
+                    "cohens_dz", "shapiro_p",
+                    "t_stat", "t_pvalue", "t_pvalue_fdr"]
+        out_int = OUT_DIR / "interaction_test.csv"
+        df_int[int_cols].to_csv(out_int, index=False)
+        print(f"\n  Interaction table saved: {out_int}")
 
     plot_paired_differences(all_rows, metrics[:5])  # plot first 5 metrics
 
